@@ -111,6 +111,8 @@ class ContentVersion(BaseModel):
     content_id: str
     number: int
     extracted_text: str
+    image_url: Optional[str] = None
+    is_image: bool = False
     created_at: float = Field(default_factory=time.time)
 
 class ContentItem(BaseModel):
@@ -123,6 +125,9 @@ class ContentItem(BaseModel):
     channel: str
     status: ContentStatus = "draft"
     current_version_id: str = ""
+    image_url: Optional[str] = None
+    is_image: bool = False
+    file_name: Optional[str] = None
     versions: List[ContentVersion] = Field(default_factory=list)
     findings: List[Finding] = Field(default_factory=list)
     created_at: float = Field(default_factory=time.time)

@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
 <body>
 
@@ -324,7 +325,7 @@
 
       <div class="input-mode-tabs">
         <button type="button" class="mode-btn active" id="tabInputPaste">Paste Text</button>
-        <button type="button" class="mode-btn" id="tabInputFile">Upload File (PDF, DOCX, TXT, MD)</button>
+        <button type="button" class="mode-btn" id="tabInputFile">Upload File / Scan Image</button>
       </div>
 
       <!-- Paste Text Section -->
@@ -335,9 +336,27 @@
 
       <!-- File Upload Section -->
       <div id="sectionFileInput" class="modal-field" style="display: none;">
-        <label for="draftFileInput" class="modal-label">Select File</label>
-        <input type="file" id="draftFileInput" accept=".pdf,.docx,.txt,.md" class="modal-file-input">
-        <small class="modal-hint">Supported formats: PDF (.pdf), Microsoft Word (.docx), Markdown (.md), Plain Text (.txt)</small>
+        <label for="draftFileInput" class="modal-label">Select File or Visual Asset</label>
+        <input type="file" id="draftFileInput" accept=".pdf,.docx,.txt,.md,.png,.jpg,.jpeg,.webp,.gif,.bmp,.svg" class="modal-file-input">
+        <small class="modal-hint">Supported formats: Images (PNG, JPG, WebP, SVG, GIF) with visual &amp; OCR scan, Documents (PDF, DOCX, TXT, MD)</small>
+
+        <!-- Dynamic Image Preview & OCR Status -->
+        <div id="modalImagePreviewContainer" style="display: none; margin-top: 12px; padding: 12px; background: var(--surface-light); border: 1px solid var(--border); border-radius: 6px;">
+          <div style="display: flex; gap: 12px; align-items: center;">
+            <img id="modalImageThumb" src="" alt="Draft Preview" style="max-height: 80px; max-width: 120px; object-fit: contain; border-radius: 4px; border: 1px solid var(--border);" />
+            <div style="flex: 1; font-size: 13px;">
+              <div id="modalImageFilename" style="font-weight: 600; color: var(--text);"></div>
+              <div id="modalOcrStatus" style="color: var(--muted); font-size: 12px; margin-top: 3px;">Image selected. Ready to scan.</div>
+            </div>
+          </div>
+          <div id="modalOcrProgressBarWrap" style="display: none; height: 4px; background: var(--border); border-radius: 2px; margin-top: 8px; overflow: hidden;">
+            <div id="modalOcrProgressBar" style="width: 0%; height: 100%; background: var(--accent); transition: width 0.2s ease;"></div>
+          </div>
+          <div id="modalOcrTextSection" style="display: none; margin-top: 10px;">
+            <label class="modal-label" style="font-size: 11px; text-transform: uppercase;">Detected Image Copy / Text (OCR)</label>
+            <textarea id="modalOcrTextarea" class="modal-input" style="height: 60px; font-size: 12px;" placeholder="Detected text from image will appear here..."></textarea>
+          </div>
+        </div>
       </div>
 
       <div class="modal-actions">

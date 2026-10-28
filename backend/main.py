@@ -25,6 +25,9 @@ from backend.models import (
 from backend.storage import store
 from backend.review_engine import review_engine
 
+uploads_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "uploads"))
+os.makedirs(uploads_dir, exist_ok=True)
+
 app = FastAPI(
     title="BrandLens API",
     description="AI Brand Governance Platform - REST API",
@@ -38,6 +41,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
 # -------------------------------------------------------------
 # Workspace & Settings (PRD Section 7.7 AD-2, AD-5)
@@ -207,14 +212,36 @@ async def upload_document(
     channel: str = Form("Global Marketing Landing Page"),
     content_type: str = Form("web"),
     creator_id: str = Form("usr_creator"),
-    creator_name: str = Form("Alex Morgan")
+    creator_name: str = Form("Alex Morgan"),
+    ocr_text: Optional[str] = Form(None)
 ):
     import io
+    import re
+    import uuid
     content_bytes = await file.read()
     extracted_text = ""
     filename = file.filename.lower()
+    image_url = None
+    is_image = False
 
-    if filename.endswith(".pdf"):
+    IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg", ".tiff")
+
+    if any(filename.endswith(ext) for ext in IMAGE_EXTENSIONS):
+        is_image = True
+        safe_name = re.sub(r'[^a-zA-Z0-9_\.-]', '_', file.filename)
+        unique_name = f"{uuid.uuid4().hex[:8]}_{safe_name}"
+        saved_path = os.path.join(uploads_dir, unique_name)
+        with open(saved_path, "wb") as f:
+            f.write(content_bytes)
+
+        image_url = f"/uploads/{unique_name}"
+
+        # If client extracted OCR text, use it; otherwise use clean informative placeholder
+        if ocr_text and ocr_text.strip():
+            extracted_text = ocr_text.strip()
+        else:
+            extracted_text = f"Visual Asset: {file.filename}\nChannel: {channel}\nFormat: {os.path.splitext(filename)[1].upper().replace('.', '')}"
+    elif filename.endswith(".pdf"):
         try:
             import pypdf
             reader = pypdf.PdfReader(io.BytesIO(content_bytes))
@@ -235,7 +262,7 @@ async def upload_document(
         except Exception:
             extracted_text = content_bytes.decode("latin-1", errors="ignore").strip()
 
-    if not extracted_text:
+    if not extracted_text and not is_image:
         raise HTTPException(status_code=400, detail="Uploaded file contained no readable text content.")
 
     content = ContentItem(
@@ -244,17 +271,22 @@ async def upload_document(
         title=title if title and title != "Uploaded Document" else file.filename,
         content_type=content_type,
         channel=channel,
-        status="draft"
+        status="draft",
+        image_url=image_url,
+        is_image=is_image,
+        file_name=file.filename
     )
     version = ContentVersion(
         content_id=content.id,
         number=1,
-        extracted_text=extracted_text
+        extracted_text=extracted_text,
+        image_url=image_url,
+        is_image=is_image
     )
     content.versions.append(version)
     content.current_version_id = version.id
 
-    findings = review_engine.run_check(extracted_text, content_type, channel)
+    findings = review_engine.run_check(extracted_text, content_type, channel, is_image=is_image)
     content.findings = findings
     store.content_items[content.id] = content
 
@@ -263,7 +295,7 @@ async def upload_document(
         action="upload_document",
         entity="content",
         entity_id=content.id,
-        metadata={"filename": file.filename, "findings_count": len(findings)}
+        metadata={"filename": file.filename, "is_image": is_image, "findings_count": len(findings)}
     )
     return content
 
@@ -290,7 +322,12 @@ def get_content(content_id: str):
     # If no findings yet, run check automatically
     if not content.findings and content.versions:
         latest_ver = content.versions[-1]
-        content.findings = review_engine.run_check(latest_ver.extracted_text, content.content_type, content.channel)
+        content.findings = review_engine.run_check(
+            latest_ver.extracted_text,
+            content.content_type,
+            content.channel,
+            is_image=bool(content.image_url or content.is_image)
+        )
         
     comments = [c for c in store.comments if c.content_id == content_id]
     decisions = [d for d in store.decisions if d.content_id == content_id]
@@ -308,7 +345,12 @@ def rerun_check(content_id: str):
     content = store.content_items[content_id]
     current_ver = next((v for v in content.versions if v.id == content.current_version_id), content.versions[-1])
     
-    findings = review_engine.run_check(current_ver.extracted_text, content.content_type, content.channel)
+    findings = review_engine.run_check(
+        current_ver.extracted_text,
+        content.content_type,
+        content.channel,
+        is_image=bool(content.image_url or content.is_image)
+    )
     content.findings = findings
     content.updated_at = time.time()
     
@@ -331,14 +373,21 @@ def submit_new_version(content_id: str, text: str = Form(...)):
     version = ContentVersion(
         content_id=content.id,
         number=new_version_num,
-        extracted_text=text
+        extracted_text=text,
+        image_url=content.image_url,
+        is_image=content.is_image
     )
     content.versions.append(version)
     content.current_version_id = version.id
     content.updated_at = time.time()
     
     # Re-run review engine on new text
-    findings = review_engine.run_check(text, content.content_type, content.channel)
+    findings = review_engine.run_check(
+        text,
+        content.content_type,
+        content.channel,
+        is_image=bool(content.image_url or content.is_image)
+    )
     content.findings = findings
     
     store.log_audit(

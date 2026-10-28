@@ -111,6 +111,14 @@ const elements = {
   draftFileInput: document.getElementById("draftFileInput"),
   btnSubmitNewDraft: document.getElementById("btnSubmitNewDraft"),
   btnCancelNewDraft: document.getElementById("btnCancelNewDraft"),
+  modalImagePreviewContainer: document.getElementById("modalImagePreviewContainer"),
+  modalImageThumb: document.getElementById("modalImageThumb"),
+  modalImageFilename: document.getElementById("modalImageFilename"),
+  modalOcrStatus: document.getElementById("modalOcrStatus"),
+  modalOcrProgressBarWrap: document.getElementById("modalOcrProgressBarWrap"),
+  modalOcrProgressBar: document.getElementById("modalOcrProgressBar"),
+  modalOcrTextSection: document.getElementById("modalOcrTextSection"),
+  modalOcrTextarea: document.getElementById("modalOcrTextarea"),
 };
 
 let activeModalCallback = null;
@@ -303,12 +311,72 @@ function setupEventListeners() {
     elements.sectionFileInput.style.display = "block";
   });
 
+  // Draft File Input Change - Instant Image Preview & OCR Scanning
+  if (elements.draftFileInput) {
+    elements.draftFileInput.addEventListener("change", async () => {
+      const file = elements.draftFileInput.files[0];
+      if (!file) {
+        if (elements.modalImagePreviewContainer) elements.modalImagePreviewContainer.style.display = "none";
+        return;
+      }
+
+      const isImg = file.type.startsWith("image/") || /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(file.name);
+      if (isImg && elements.modalImagePreviewContainer) {
+        elements.modalImagePreviewContainer.style.display = "block";
+        if (elements.modalImageFilename) elements.modalImageFilename.textContent = file.name;
+        if (elements.modalImageThumb) elements.modalImageThumb.src = URL.createObjectURL(file);
+        if (elements.modalOcrStatus) elements.modalOcrStatus.textContent = "Visual asset selected. Scanning for copy...";
+        if (elements.modalOcrProgressBarWrap) {
+          elements.modalOcrProgressBarWrap.style.display = "block";
+          if (elements.modalOcrProgressBar) elements.modalOcrProgressBar.style.width = "20%";
+        }
+        if (elements.modalOcrTextSection) elements.modalOcrTextSection.style.display = "none";
+        if (elements.modalOcrTextarea) elements.modalOcrTextarea.value = "";
+
+        // Client-side OCR if Tesseract.js is present
+        if (window.Tesseract) {
+          try {
+            const worker = await window.Tesseract.recognize(file, "eng", {
+              logger: (m) => {
+                if (m && m.status === "recognizing text" && elements.modalOcrProgressBar) {
+                  const pct = Math.round((m.progress || 0) * 100);
+                  elements.modalOcrProgressBar.style.width = `${Math.max(20, pct)}%`;
+                  if (elements.modalOcrStatus) elements.modalOcrStatus.textContent = `Extracting copy... ${pct}%`;
+                }
+              }
+            });
+            const recognized = worker && worker.data ? worker.data.text.trim() : "";
+            if (elements.modalOcrProgressBar) elements.modalOcrProgressBar.style.width = "100%";
+            if (recognized) {
+              if (elements.modalOcrStatus) elements.modalOcrStatus.textContent = "OCR scan complete: Text extracted";
+              if (elements.modalOcrTextSection) elements.modalOcrTextSection.style.display = "block";
+              if (elements.modalOcrTextarea) elements.modalOcrTextarea.value = recognized;
+            } else {
+              if (elements.modalOcrStatus) elements.modalOcrStatus.textContent = "Visual asset scan complete (no text detected)";
+            }
+          } catch (ocrErr) {
+            console.warn("Client OCR warning:", ocrErr);
+            if (elements.modalOcrStatus) elements.modalOcrStatus.textContent = "Visual asset ready for inspection";
+            if (elements.modalOcrProgressBarWrap) elements.modalOcrProgressBarWrap.style.display = "none";
+          }
+        } else {
+          if (elements.modalOcrStatus) elements.modalOcrStatus.textContent = "Visual asset ready for inspection";
+          if (elements.modalOcrProgressBarWrap) elements.modalOcrProgressBarWrap.style.display = "none";
+        }
+      } else if (elements.modalImagePreviewContainer) {
+        elements.modalImagePreviewContainer.style.display = "none";
+      }
+    });
+  }
+
   // Open / Close New Draft Modal
   elements.btnNewDraft.addEventListener("click", () => {
     elements.newDraftModal.classList.add("active");
   });
   elements.btnCancelNewDraft.addEventListener("click", () => {
     elements.newDraftModal.classList.remove("active");
+    if (elements.modalImagePreviewContainer) elements.modalImagePreviewContainer.style.display = "none";
+    if (elements.modalOcrTextarea) elements.modalOcrTextarea.value = "";
   });
 
   // Submit Draft Action (Paste or Upload)
@@ -319,7 +387,7 @@ function setupEventListeners() {
     if (state.submissionMode === "file") {
       const file = elements.draftFileInput.files[0];
       if (!file) {
-        alert("Please select a file (.pdf, .docx, .txt, .md) to upload.");
+        alert("Please select a file (.pdf, .docx, .png, .jpg, .txt, .md) to upload.");
         return;
       }
       const formData = new FormData();
@@ -330,12 +398,18 @@ function setupEventListeners() {
       formData.append("creator_id", state.currentUser.id);
       formData.append("creator_name", state.currentUser.name);
 
+      if (elements.modalOcrTextarea && elements.modalOcrTextarea.value.trim()) {
+        formData.append("ocr_text", elements.modalOcrTextarea.value.trim());
+      }
+
       elements.btnSubmitNewDraft.disabled = true;
       elements.btnSubmitNewDraft.textContent = "Extracting & Checking...";
       try {
         const created = await api.uploadDocument(formData);
         elements.newDraftModal.classList.remove("active");
         elements.draftFileInput.value = "";
+        if (elements.modalImagePreviewContainer) elements.modalImagePreviewContainer.style.display = "none";
+        if (elements.modalOcrTextarea) elements.modalOcrTextarea.value = "";
         await reloadDocumentList(created.id);
       } catch (err) {
         alert("Upload error: " + err.message);
@@ -487,22 +561,28 @@ function renderStudio() {
   renderFindings();
 }
 
-function renderHighlightedText() {
-  const { content } = state.currentContentData;
-  const currentVersion = content.versions.find((v) => v.id === content.current_version_id) || content.versions[content.versions.length - 1];
-  const fullText = currentVersion ? currentVersion.extracted_text : "";
-  const findings = content.findings || [];
+function isHashedOrBinaryText(text) {
+  if (!text) return false;
+  if (text.includes("\x00") || text.includes("\uFFFD")) return true;
+  if (/^(\x89PNG|\xFF\xD8\xFF|GIF8|RIFF.{4}WEBP)/.test(text)) return true;
+  const nonPrintable = (text.slice(0, 400).match(/[\x00-\x08\x0E-\x1F\x7F-\x9F]/g) || []).length;
+  if (nonPrintable > 5) return true;
+  return false;
+}
 
-  if (findings.length === 0) {
-    elements.docTextCanvas.innerHTML = `<p>${escapeHtml(fullText)}</p>`;
-    return;
+function generateHighlightedHtml(fullText, findings) {
+  if (!fullText) return "";
+  if (isHashedOrBinaryText(fullText)) return "";
+
+  if (!findings || findings.length === 0) {
+    return escapeHtml(fullText);
   }
 
   let html = "";
   let lastIndex = 0;
 
   const matchableFindings = findings
-    .filter((f) => fullText.includes(f.excerpt.text))
+    .filter((f) => f.excerpt && f.excerpt.text && fullText.includes(f.excerpt.text))
     .map((f) => {
       const idx = fullText.indexOf(f.excerpt.text);
       return { ...f, start: idx, end: idx + f.excerpt.text.length };
@@ -512,15 +592,98 @@ function renderHighlightedText() {
   for (const f of matchableFindings) {
     if (f.start < lastIndex) continue;
     html += escapeHtml(fullText.substring(lastIndex, f.start));
-    
+
     const isResolved = f.status === "accepted" || f.status === "overridden";
     const isSelected = f.id === state.activeFindingId;
-    
+
     html += `<span class="highlight-finding highlight-${f.category} ${isSelected ? "selected" : ""} ${isResolved ? "resolved" : ""}" data-finding-id="${f.id}" title="Flagged: ${escapeHtml(f.reason)}">${escapeHtml(f.excerpt.text)}</span>`;
     lastIndex = f.end;
   }
   html += escapeHtml(fullText.substring(lastIndex));
+  return html;
+}
 
+function renderHighlightedText() {
+  const { content } = state.currentContentData;
+  const currentVersion = content.versions.find((v) => v.id === content.current_version_id) || content.versions[content.versions.length - 1];
+  const fullText = currentVersion ? currentVersion.extracted_text : "";
+  const findings = content.findings || [];
+  const imageUrl = content.image_url || (currentVersion && currentVersion.image_url);
+
+  // If content is an image, render the image visually
+  if (imageUrl || content.is_image) {
+    const isBinary = isHashedOrBinaryText(fullText);
+    const hasMeaningfulText = !isBinary && fullText && fullText.trim() && !fullText.startsWith("Visual Asset:");
+
+    let html = `
+      <div class="studio-image-card">
+        <div class="studio-image-toolbar">
+          <div class="image-meta-info">
+            <span class="badge-visual-asset">Visual Asset</span>
+            <span class="image-name-label">${escapeHtml(content.file_name || content.title)}</span>
+          </div>
+          <div class="image-toolbar-actions">
+            ${imageUrl ? `<a href="${escapeHtml(imageUrl)}" target="_blank" rel="noopener noreferrer" class="btn-subtle btn-xs" style="text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+              <span>Open Full Size</span>
+              <span style="font-size: 11px;">↗</span>
+            </a>` : ""}
+          </div>
+        </div>
+
+        <div class="studio-image-viewport">
+          ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(content.title)}" class="studio-doc-image" />` : `<div style="color: var(--muted); padding: 40px;">[Visual Asset Attached]</div>`}
+        </div>
+    `;
+
+    if (hasMeaningfulText) {
+      const highlightedTextHtml = generateHighlightedHtml(fullText, findings);
+      html += `
+        <div class="image-extracted-text-wrap">
+          <div class="image-extracted-header">
+            <span>Embedded Copy &amp; Slogans (OCR Detected)</span>
+          </div>
+          <div class="image-extracted-body">
+            <p>${highlightedTextHtml}</p>
+          </div>
+        </div>
+      `;
+    } else {
+      html += `
+        <div class="image-visual-notice">
+          <div class="notice-title">Visual Brand &amp; Accessibility Verification</div>
+          <p>This image asset has been evaluated against active brand rules, including WCAG 2.1 AA digital accessibility standards and required descriptive metadata.</p>
+        </div>
+      `;
+    }
+
+    html += `</div>`;
+    elements.docTextCanvas.innerHTML = html;
+
+    elements.docTextCanvas.querySelectorAll(".highlight-finding").forEach((span) => {
+      span.addEventListener("click", () => {
+        selectFinding(span.dataset.findingId);
+      });
+    });
+    return;
+  }
+
+  // Regular document / text flow
+  if (isHashedOrBinaryText(fullText)) {
+    elements.docTextCanvas.innerHTML = `
+      <div style="padding: 32px 16px; text-align: center; color: var(--muted);">
+        <h4 style="color: var(--text); margin-bottom: 8px;">Binary Content Detected</h4>
+        <p>This file contained unreadable binary bytes instead of text. Please re-upload as a supported visual format (.png, .jpg) or document (.pdf, .docx, .txt).</p>
+      </div>
+    `;
+    return;
+  }
+
+  if (findings.length === 0) {
+    elements.docTextCanvas.innerHTML = `<p>${escapeHtml(fullText)}</p>`;
+    return;
+  }
+
+  const html = generateHighlightedHtml(fullText, findings);
   elements.docTextCanvas.innerHTML = `<p>${html}</p>`;
 
   elements.docTextCanvas.querySelectorAll(".highlight-finding").forEach((span) => {

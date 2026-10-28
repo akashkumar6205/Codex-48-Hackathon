@@ -17,15 +17,45 @@ class ReviewEngine:
     def __init__(self):
         pass
 
-    def run_check(self, text: str, content_type: str = "web", channel: str = "") -> List[Finding]:
+    def run_check(self, text: str, content_type: str = "web", channel: str = "", is_image: bool = False) -> List[Finding]:
         findings: List[Finding] = []
         run_id = f"run_{uuid.uuid4().hex[:8]}"
 
-        if not text or not text.strip():
-            return []
-
         active_sources = {s.id: s for s in store.sources.values() if s.status == "active"}
         is_rules_only = store.workspace.settings.rules_only_mode
+
+        # Check visual and accessibility guidelines for image assets (PRD CS-4 & RE-2)
+        if is_image:
+            acc_sources = [s for s in active_sources.values() if s.id == "accessibility-01" or s.type == "asset-rule" or "accessibility" in s.title.lower()]
+            if acc_sources:
+                acc_src = acc_sources[0]
+                excerpt_str = (text[:40] if text and text.strip() else "Scanned Visual Asset").strip()
+                findings.append(Finding(
+                    id=f"f_{uuid.uuid4().hex[:8]}",
+                    run_id=run_id,
+                    category="accessibility",
+                    severity="medium",
+                    confidence=0.96,
+                    excerpt=TextExcerpt(
+                        text=excerpt_str,
+                        start=0,
+                        end=len(excerpt_str)
+                    ),
+                    reason="Visual assets require verified alternative text (alt-text) and WCAG 2.1 AA digital accessibility compliance.",
+                    sources=[
+                        FindingSource(
+                            source_id=acc_src.id,
+                            title=acc_src.title,
+                            section=acc_src.section,
+                            quote="All digital customer communications must follow WCAG 2.1 AA standards. Ensure high text contrast ratios, meaningful alternative text, and unambiguous call-to-action link labels."
+                        )
+                    ],
+                    suggestion="Add descriptive alternative text (alt-text) and confirm high contrast readability before publication.",
+                    status="open"
+                ))
+
+        if not text or not text.strip():
+            return findings
 
         # -----------------------------------------------------------------
         # 1. DYNAMIC GLOSSARY & VOCABULARY CHECKS

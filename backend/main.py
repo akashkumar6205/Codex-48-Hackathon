@@ -4,8 +4,14 @@ Provides REST endpoints according to PRD.md Section 12.
 Serves static frontend (HTML5, Vanilla JavaScript, CSS).
 """
 import os
+import sys
 import time
+from pathlib import Path
 from typing import List, Optional
+
+# Ensure project root is in sys.path whether executed from root or backend/
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from fastapi import FastAPI, HTTPException, Query, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles

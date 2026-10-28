@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BrandLens — AI Brand Governance Platform</title>
+  <meta name="description" content="AI brand governance: explains, cites sources, suggests fixes, humans decide.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+  <!-- Minimalist Shell Header -->
+  <header class="app-header">
+    <div class="header-left">
+      <div class="brand-badge">
+        <span class="brand-monogram">BL</span>
+        <span class="brand-name">BrandLens</span>
+      </div>
+
+      <!-- Center Navigation Tabs -->
+      <nav class="nav-links" aria-label="Main Navigation">
+        <button class="nav-btn active" data-tab="studio">Studio</button>
+        <button class="nav-btn" data-tab="knowledge">Guidelines</button>
+        <button class="nav-btn" data-tab="insights">Analytics</button>
+        <button class="nav-btn" data-tab="audit">Audit Log</button>
+        <button class="nav-btn" data-tab="settings">Settings</button>
+      </nav>
+    </div>
+
+    <!-- Right Header Controls: Role Selector -->
+    <div class="header-right">
+      <div class="role-pill">
+        <span class="role-dot"></span>
+        <select class="role-select" id="roleSelect" aria-label="Select User Role">
+          <option value="creator">Alex Morgan (Creator)</option>
+          <option value="reviewer">Jordan Hayes (Reviewer)</option>
+          <option value="brand_manager">Elena Vance (Brand Manager)</option>
+          <option value="admin">Marcus Sterling (Admin)</option>
+        </select>
+      </div>
+      <span id="currentUserName" style="display: none;">Alex Morgan</span>
+    </div>
+  </header>
+
+  <!-- Main Viewports -->
+  <main class="main-wrapper">
+
+    <!-- 1. Review Studio View (Split-Pane) -->
+    <section class="view-section active" id="view-studio">
+      <!-- Mobile Studio Switcher (visible on mobile/small screens <= 768px) -->
+      <div class="studio-mobile-bar" id="studioMobileBar">
+        <button type="button" class="studio-mobile-tab active" id="btnStudioMobileDoc">Document</button>
+        <button type="button" class="studio-mobile-tab" id="btnStudioMobileFindings">
+          Issues <span class="count-badge" id="mobileFindingCount">0</span>
+        </button>
+      </div>
+
+      <div class="studio-layout" id="studioLayout">
+        
+        <!-- Left Pane: Document Canvas -->
+        <div class="doc-pane">
+          
+          <!-- Streamlined Doc Toolbar -->
+          <div class="doc-toolbar">
+            <div class="doc-title-group">
+              <div class="doc-selector-wrap">
+                <select class="doc-dropdown" id="docSelect" aria-label="Select Document"></select>
+                <span class="status-badge status-draft" id="docStatus">Draft</span>
+              </div>
+              <h1 id="docTitle" style="display: none;">Document Title</h1>
+              <div class="doc-caption">
+                <span id="docChannel">Global Website</span>
+                <span class="meta-sep">·</span>
+                <span id="docVersionNum">v1</span>
+                <span class="meta-sep">·</span>
+                <span id="docCreator">Alex Morgan</span>
+              </div>
+            </div>
+
+            <div class="doc-actions">
+              <button class="btn-subtle" id="btnRerunCheck" title="Re-evaluate copy against active guidelines">Re-check</button>
+              <button class="btn-subtle btn-danger" id="btnDeleteDraft" title="Delete draft">Delete</button>
+              <button class="btn-primary" id="btnNewDraft">+ New Draft</button>
+              <button class="btn-approve" id="btnApproveContent" style="display: none;">Approve</button>
+              <button class="btn-subtle btn-reject" id="btnRejectContent" style="display: none;">Request Changes</button>
+            </div>
+          </div>
+
+          <!-- Document Canvas Body -->
+          <div class="doc-content-area">
+            <div class="view-mode-tabs">
+              <button class="mode-tab active" id="btnTextTab">Document Copy</button>
+              <button class="mode-tab" id="btnDiffTab">Revision Diff</button>
+            </div>
+
+            <!-- Reading Surface -->
+            <div class="reading-surface" id="docTextCanvas">
+              <!-- Populated by JS -->
+            </div>
+
+            <!-- Diff View Container -->
+            <div id="diffContainer" style="display: none;">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Pane: Findings Inspector -->
+        <div class="findings-pane">
+          <div class="findings-topbar">
+            <div class="findings-heading">
+              <span>Issues Found</span>
+              <span class="count-badge" id="findingCountBadge">0</span>
+            </div>
+            
+            <!-- Simplified Segmented Filter -->
+            <div class="filter-segment">
+              <button class="segment-btn active" data-filter="all">All</button>
+              <button class="segment-btn" data-filter="open">Open</button>
+              <button class="segment-btn" data-filter="accepted">Resolved</button>
+              <button class="segment-btn" data-filter="disputed">Disputed</button>
+            </div>
+          </div>
+
+          <!-- Clean Finding Cards List -->
+          <div class="findings-list" id="findingsList">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- 2. Knowledge Base View -->
+    <section class="view-section" id="view-knowledge">
+      <div class="page-container">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">Brand Guidelines &amp; Policies</h1>
+            <p class="page-subtitle">Single source of truth for claims rules, glossaries, voice, and approved metrics.</p>
+          </div>
+          <div class="page-actions">
+            <input type="text" class="search-input" id="kbSearchInput" placeholder="Filter guidelines...">
+            <button class="btn-primary" id="btnAddNewSource">+ Add Guideline</button>
+          </div>
+        </div>
+
+        <div class="sources-grid" id="sourcesGrid">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. Insights & Governance View -->
+    <section class="view-section" id="view-insights">
+      <div class="page-container">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">Governance Analytics</h1>
+            <p class="page-subtitle">Track compliance rates and surface ambiguous guidelines requiring clarification.</p>
+          </div>
+        </div>
+
+        <!-- Metric KPI Cards -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Submissions</div>
+            <div class="stat-value" id="statTotalContent">0</div>
+            <div class="stat-meta">Pre-publication checks</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Issues Detected</div>
+            <div class="stat-value" id="statTotalFlags">0</div>
+            <div class="stat-meta">100% source-grounded</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Acceptance Rate</div>
+            <div class="stat-value" id="statAcceptanceRate">0%</div>
+            <div class="stat-meta">Accepted suggestions</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Ambiguity Index</div>
+            <div class="stat-value" id="statOverrideRate">0%</div>
+            <div class="stat-meta">Dispute &amp; override rate</div>
+          </div>
+        </div>
+
+        <!-- Unclear Rules Detection Panel -->
+        <div class="notice-panel">
+          <div class="notice-header">
+            <span class="notice-tag">Guideline Health</span>
+            <span>Ambiguous Rules (High Flag + High Override Rate)</span>
+          </div>
+          <p class="notice-desc">Rules with high dispute or override rates usually indicate unclear wording rather than author error.</p>
+          <div id="unclearRulesList">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+
+        <!-- Top Flagged Rules Table -->
+        <div class="table-container">
+          <div class="table-title">Most Frequently Triggered Guidelines</div>
+          <table class="clean-table">
+            <thead>
+              <tr>
+                <th>Section</th>
+                <th>Policy Title</th>
+                <th class="n">Flags</th>
+                <th class="n">Overrides</th>
+                <th class="n">Disputes</th>
+                <th class="n">Override %</th>
+              </tr>
+            </thead>
+            <tbody id="topRulesTableBody">
+              <!-- Populated by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. Audit Trail View -->
+    <section class="view-section" id="view-audit">
+      <div class="page-container">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">Audit Trail</h1>
+            <p class="page-subtitle">Append-only log of submissions, reviews, overrides, and approvals.</p>
+          </div>
+        </div>
+
+        <div class="table-container">
+          <table class="clean-table">
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Actor</th>
+                <th>Action</th>
+                <th>Entity</th>
+                <th>Metadata</th>
+              </tr>
+            </thead>
+            <tbody id="auditTableBody">
+              <!-- Populated by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. Settings & AI Disclosure View -->
+    <section class="view-section" id="view-settings">
+      <div class="page-container" style="max-width: 760px; margin: 0 auto;">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">Settings &amp; AI Transparency</h1>
+            <p class="page-subtitle">Configure model execution and review data-sharing boundaries.</p>
+          </div>
+        </div>
+
+        <div class="settings-card">
+          <h3 class="settings-heading">AI Disclosure Statement</h3>
+          <p class="settings-text" id="txtAiDisclosure"></p>
+        </div>
+
+        <div class="settings-card" style="margin-top: 16px;">
+          <label class="checkbox-row">
+            <input type="checkbox" id="chkRulesOnly">
+            <span>
+              <strong>Rules-Only Mode (Zero External AI)</strong>
+              <small class="settings-desc">Run only deterministic keyword and glossary checks. No content will be sent to language models.</small>
+            </span>
+          </label>
+
+          <div class="field-row">
+            <label class="field-label" for="selAiProvider">Configured AI Engine</label>
+            <select class="clean-select" id="selAiProvider">
+              <option value="grounded-llm-v1">Grounded Assistant LLM v1 (Active Citations)</option>
+              <option value="rules-only">Deterministic Rules Only</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Generic Action Modal (Dispute / Override / Edit) -->
+  <div class="modal-backdrop" id="modalOverlay">
+    <div class="modal-window">
+      <h3 class="modal-heading" id="modalTitle">Action</h3>
+      <label id="modalInputLabel" class="modal-label"></label>
+      <textarea class="modal-input" id="modalTextarea"></textarea>
+      <div class="modal-actions">
+        <button class="btn-subtle" id="btnModalCancel">Cancel</button>
+        <button class="btn-primary" id="btnModalSubmit">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- New Draft Modal (Text Paste or File Upload: PDF, DOCX, TXT, MD) -->
+  <div class="modal-backdrop" id="newDraftModal">
+    <div class="modal-window" style="max-width: 580px;">
+      <h3 class="modal-heading">New Content Draft</h3>
+      
+      <div class="modal-field">
+        <label for="draftTitleInput" class="modal-label">Title</label>
+        <input type="text" class="modal-text-input" id="draftTitleInput" placeholder="e.g. Q4 EMEA Enterprise Announcement">
+      </div>
+
+      <div class="modal-field">
+        <label for="draftChannelSelect" class="modal-label">Publishing Channel</label>
+        <select class="clean-select" id="draftChannelSelect" style="width: 100%;">
+          <option value="Global Marketing Landing Page">Global Marketing Landing Page</option>
+          <option value="Social Media (LinkedIn / X)">Social Media (LinkedIn / X)</option>
+          <option value="Executive Slide Deck">Executive Slide Deck</option>
+          <option value="Press Release">Press Release</option>
+          <option value="Customer Email Campaign">Customer Email Campaign</option>
+        </select>
+      </div>
+
+      <div class="input-mode-tabs">
+        <button type="button" class="mode-btn active" id="tabInputPaste">Paste Text</button>
+        <button type="button" class="mode-btn" id="tabInputFile">Upload File (PDF, DOCX, TXT, MD)</button>
+      </div>
+
+      <!-- Paste Text Section -->
+      <div id="sectionPasteInput" class="modal-field">
+        <label for="draftTextInput" class="modal-label">Draft Copy</label>
+        <textarea class="modal-input" id="draftTextInput" style="height: 140px;" placeholder="Paste your draft copy here to evaluate against active guidelines..."></textarea>
+      </div>
+
+      <!-- File Upload Section -->
+      <div id="sectionFileInput" class="modal-field" style="display: none;">
+        <label for="draftFileInput" class="modal-label">Select File</label>
+        <input type="file" id="draftFileInput" accept=".pdf,.docx,.txt,.md" class="modal-file-input">
+        <small class="modal-hint">Supported formats: PDF (.pdf), Microsoft Word (.docx), Markdown (.md), Plain Text (.txt)</small>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn-subtle" id="btnCancelNewDraft">Cancel</button>
+        <button class="btn-primary" id="btnSubmitNewDraft">Evaluate Draft</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- New Guideline Modal (for Brand Managers / Admins) -->
+  <div class="modal-backdrop" id="newSourceModal">
+    <div class="modal-window" style="max-width: 560px;">
+      <h3 class="modal-heading">Add Brand Guideline</h3>
+      
+      <div class="grid-2">
+        <div class="modal-field">
+          <label for="sourceTypeSelect" class="modal-label">Type</label>
+          <select class="clean-select" id="sourceTypeSelect" style="width: 100%;">
+            <option value="guideline">Brand Guideline</option>
+            <option value="claims">Claims &amp; Superlatives Policy</option>
+            <option value="glossary">Product &amp; Terminology Glossary</option>
+            <option value="fact">Approved Metric / Fact</option>
+            <option value="asset-rule">Visual &amp; Accessibility Rule</option>
+          </select>
+        </div>
+        <div class="modal-field">
+          <label for="sourceSectionInput" class="modal-label">Section Reference</label>
+          <input type="text" class="modal-text-input" id="sourceSectionInput" placeholder="e.g. 3.2">
+        </div>
+      </div>
+
+      <div class="modal-field">
+        <label for="sourceTitleInput" class="modal-label">Guideline Title</label>
+        <input type="text" class="modal-text-input" id="sourceTitleInput" placeholder="e.g. Product Naming Standard">
+      </div>
+
+      <div class="modal-field">
+        <label for="sourceContentInput" class="modal-label">Policy Content &amp; Rules</label>
+        <textarea class="modal-input" id="sourceContentInput" style="height: 120px;" placeholder="Describe the approved terms, prohibited claims, or voice standards..."></textarea>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn-subtle" id="btnCancelNewSource">Cancel</button>
+        <button class="btn-primary" id="btnSaveNewSource">Save Guideline</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pure Vanilla JavaScript (Zero TypeScript, Zero Next.js) -->
+  <script type="module" src="/static/js/app.js"></script>
+</body>
+</html>

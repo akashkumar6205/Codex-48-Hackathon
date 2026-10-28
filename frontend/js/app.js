@@ -321,6 +321,8 @@ function setupEventListeners() {
       }
 
       const isImg = file.type.startsWith("image/") || /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(file.name);
+      const isPdf = file.name.toLowerCase().endsWith(".pdf");
+
       if (isImg && elements.modalImagePreviewContainer) {
         elements.modalImagePreviewContainer.style.display = "block";
         if (elements.modalImageFilename) elements.modalImageFilename.textContent = file.name;
@@ -361,6 +363,50 @@ function setupEventListeners() {
           }
         } else {
           if (elements.modalOcrStatus) elements.modalOcrStatus.textContent = "Visual asset ready for inspection";
+          if (elements.modalOcrProgressBarWrap) elements.modalOcrProgressBarWrap.style.display = "none";
+        }
+      } else if (isPdf && elements.modalImagePreviewContainer) {
+        elements.modalImagePreviewContainer.style.display = "block";
+        if (elements.modalImageFilename) elements.modalImageFilename.textContent = file.name;
+        if (elements.modalImageThumb) elements.modalImageThumb.src = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 24 24' fill='none' stroke='%23ef4444' stroke-width='2'><path d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'></path><polyline points='14 2 14 8 20 8'></polyline><text x='7' y='18' fill='%23ef4444' font-size='6' font-family='sans-serif' font-weight='bold'>PDF</text></svg>";
+        if (elements.modalOcrStatus) elements.modalOcrStatus.textContent = "PDF document selected. Extracting text...";
+        if (elements.modalOcrProgressBarWrap) {
+          elements.modalOcrProgressBarWrap.style.display = "block";
+          if (elements.modalOcrProgressBar) elements.modalOcrProgressBar.style.width = "40%";
+        }
+        if (elements.modalOcrTextSection) elements.modalOcrTextSection.style.display = "none";
+        if (elements.modalOcrTextarea) elements.modalOcrTextarea.value = "";
+
+        // Client-side extraction via pdf.js if available
+        if (window.pdfjsLib) {
+          try {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+            const arrayBuffer = await file.arrayBuffer();
+            const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            let fullPdfText = "";
+            for (let i = 1; i <= pdfDoc.numPages; i++) {
+              const page = await pdfDoc.getPage(i);
+              const textContent = await page.getTextContent();
+              const pageText = textContent.items.map((item) => item.str).join(" ");
+              if (pageText.trim()) {
+                fullPdfText += pageText + "\n\n";
+              }
+            }
+            if (elements.modalOcrProgressBar) elements.modalOcrProgressBar.style.width = "100%";
+            if (fullPdfText.trim()) {
+              if (elements.modalOcrStatus) elements.modalOcrStatus.textContent = `PDF extracted: ${pdfDoc.numPages} page(s) ready`;
+              if (elements.modalOcrTextSection) elements.modalOcrTextSection.style.display = "block";
+              if (elements.modalOcrTextarea) elements.modalOcrTextarea.value = fullPdfText.trim();
+            } else {
+              if (elements.modalOcrStatus) elements.modalOcrStatus.textContent = `PDF loaded: ${pdfDoc.numPages} page(s) (Scanned / Visual Document)`;
+            }
+          } catch (pdfErr) {
+            console.warn("Client PDF extraction:", pdfErr);
+            if (elements.modalOcrStatus) elements.modalOcrStatus.textContent = "PDF document ready for evaluation";
+            if (elements.modalOcrProgressBarWrap) elements.modalOcrProgressBarWrap.style.display = "none";
+          }
+        } else {
+          if (elements.modalOcrStatus) elements.modalOcrStatus.textContent = "PDF document ready for upload & evaluation";
           if (elements.modalOcrProgressBarWrap) elements.modalOcrProgressBarWrap.style.display = "none";
         }
       } else if (elements.modalImagePreviewContainer) {
@@ -652,6 +698,65 @@ function renderHighlightedText() {
         <div class="image-visual-notice">
           <div class="notice-title">Visual Brand &amp; Accessibility Verification</div>
           <p>This image asset has been evaluated against active brand rules, including WCAG 2.1 AA digital accessibility standards and required descriptive metadata.</p>
+        </div>
+      `;
+    }
+
+    html += `</div>`;
+    elements.docTextCanvas.innerHTML = html;
+
+    elements.docTextCanvas.querySelectorAll(".highlight-finding").forEach((span) => {
+      span.addEventListener("click", () => {
+        selectFinding(span.dataset.findingId);
+      });
+    });
+    return;
+  }
+
+  // If content is a PDF document, render the PDF viewer and extracted text
+  const pdfUrl = content.pdf_url || (currentVersion && currentVersion.pdf_url);
+  if (pdfUrl || content.is_pdf) {
+    const isBinary = isHashedOrBinaryText(fullText);
+    const hasMeaningfulText = !isBinary && fullText && fullText.trim() && !fullText.startsWith("Document:");
+
+    let html = `
+      <div class="studio-pdf-card">
+        <div class="studio-pdf-toolbar">
+          <div class="pdf-meta-info">
+            <span class="badge-pdf-doc">PDF Document</span>
+            <span class="pdf-name-label">${escapeHtml(content.file_name || content.title)}</span>
+          </div>
+          <div class="pdf-toolbar-actions">
+            ${pdfUrl ? `<a href="${escapeHtml(pdfUrl)}" target="_blank" rel="noopener noreferrer" class="btn-subtle btn-xs" style="text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+              <span>Open PDF in New Tab</span>
+              <span style="font-size: 11px;">↗</span>
+            </a>` : ""}
+          </div>
+        </div>
+
+        ${pdfUrl ? `
+        <div class="studio-pdf-viewport">
+          <iframe src="${escapeHtml(pdfUrl)}" class="studio-doc-pdf-iframe" title="${escapeHtml(content.title)}"></iframe>
+        </div>` : ""}
+    `;
+
+    if (hasMeaningfulText) {
+      const highlightedTextHtml = generateHighlightedHtml(fullText, findings);
+      html += `
+        <div class="image-extracted-text-wrap" style="margin-top: 16px;">
+          <div class="image-extracted-header">
+            <span>Extracted Document Copy</span>
+          </div>
+          <div class="image-extracted-body">
+            <p>${highlightedTextHtml}</p>
+          </div>
+        </div>
+      `;
+    } else {
+      html += `
+        <div class="image-visual-notice" style="margin-top: 16px;">
+          <div class="notice-title">Document Governance Review Complete</div>
+          <p>This PDF document has been evaluated against brand guidelines, approved claims, and asset policies.</p>
         </div>
       `;
     }

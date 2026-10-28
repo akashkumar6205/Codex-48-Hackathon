@@ -123,10 +123,10 @@ class ReviewEngine:
             primary_claim_src = claims_sources[0]
             
             # Pattern A: #1 rankings (e.g. #1 cloud platform in Europe)
-            for match in re.finditer(r"\b#1(?:\s+in\s+[a-zA-Z0-9\s]+|\s+[a-zA-Z0-9\s]+?(?=\.|\,|\;|\!|\?|$))", text, re.IGNORECASE):
+            for match in re.finditer(r"(?<!\w)#1(?:\s+in\s+[a-zA-Z0-9\s]+|\s+[a-zA-Z0-9\s]+?(?=\.|\,|\;|\!|\?|$))", text, re.IGNORECASE):
                 phrase = match.group(0).strip()
                 # Generate contextual intent-preserving suggestion
-                suggested = re.sub(r"\b#1\b", "trusted", phrase, flags=re.IGNORECASE)
+                suggested = re.sub(r"(?<!\w)#1\b", "trusted", phrase, flags=re.IGNORECASE)
                 if suggested == phrase:
                     suggested = "trusted industry platform"
 

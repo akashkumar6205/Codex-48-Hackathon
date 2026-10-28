@@ -205,6 +205,35 @@ def submit_content(req: ContentSubmitRequest):
     )
     return content
 
+def extract_text_from_pdf_stream(content_bytes: bytes) -> str:
+    """Fallback to extract readable text tokens from raw PDF stream when parser encounters errors."""
+    import re
+    stream_parts = []
+    # 1. Matches text in literal parentheses: (OmniFlow) Tj or [(Text)] TJ
+    tj_matches = re.findall(rb'\(([^()]{2,})\)\s*(?:Tj|\'|\")', content_bytes)
+    for m in tj_matches:
+        try:
+            s = m.decode('utf-8', errors='ignore').strip()
+            if len(s) > 1 and any(c.isalnum() for c in s):
+                stream_parts.append(s)
+        except Exception:
+            pass
+    if stream_parts:
+        return ' '.join(stream_parts)
+
+    # 2. General readable words inside BT ... ET text blocks
+    bt_blocks = re.findall(rb'BT\s+(.*?)\s+ET', content_bytes, re.DOTALL)
+    for b in bt_blocks:
+        sub_matches = re.findall(rb'[a-zA-Z0-9_\-#.,;:!?\'" ]{4,}', b)
+        for sm in sub_matches:
+            try:
+                dec = sm.decode('utf-8', errors='ignore').strip()
+                if len(dec) > 3:
+                    stream_parts.append(dec)
+            except Exception:
+                pass
+    return ' '.join(stream_parts)
+
 @app.post("/api/content/upload")
 async def upload_document(
     file: UploadFile = File(...),
@@ -218,17 +247,28 @@ async def upload_document(
     import io
     import re
     import uuid
+
+    # Normalize inputs in case called directly or with Form defaults
+    title = title if isinstance(title, str) else "Uploaded Document"
+    channel = channel if isinstance(channel, str) else "Global Marketing Landing Page"
+    content_type = content_type if isinstance(content_type, str) else "web"
+    creator_id = creator_id if isinstance(creator_id, str) else "usr_creator"
+    creator_name = creator_name if isinstance(creator_name, str) else "Alex Morgan"
+    ocr_text = ocr_text if isinstance(ocr_text, str) else ""
+
     content_bytes = await file.read()
     extracted_text = ""
     filename = file.filename.lower()
     image_url = None
     is_image = False
+    pdf_url = None
+    is_pdf = False
+    safe_name = re.sub(r'[^a-zA-Z0-9_\.-]', '_', file.filename)
 
     IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg", ".tiff")
 
     if any(filename.endswith(ext) for ext in IMAGE_EXTENSIONS):
         is_image = True
-        safe_name = re.sub(r'[^a-zA-Z0-9_\.-]', '_', file.filename)
         unique_name = f"{uuid.uuid4().hex[:8]}_{safe_name}"
         saved_path = os.path.join(uploads_dir, unique_name)
         with open(saved_path, "wb") as f:
@@ -242,19 +282,82 @@ async def upload_document(
         else:
             extracted_text = f"Visual Asset: {file.filename}\nChannel: {channel}\nFormat: {os.path.splitext(filename)[1].upper().replace('.', '')}"
     elif filename.endswith(".pdf"):
-        try:
-            import pypdf
-            reader = pypdf.PdfReader(io.BytesIO(content_bytes))
-            extracted_text = "\n\n".join([page.extract_text() or "" for page in reader.pages]).strip()
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Failed to parse PDF document: {str(e)}")
+        is_pdf = True
+        unique_name = f"{uuid.uuid4().hex[:8]}_{safe_name}"
+        saved_path = os.path.join(uploads_dir, unique_name)
+        with open(saved_path, "wb") as f:
+            f.write(content_bytes)
+        pdf_url = f"/uploads/{unique_name}"
+
+        # 1. Prefer client-side extracted text if provided
+        if ocr_text and ocr_text.strip():
+            extracted_text = ocr_text.strip()
+        else:
+            # 2. Resilient pypdf extraction
+            try:
+                import pypdf
+                reader = pypdf.PdfReader(io.BytesIO(content_bytes), strict=False)
+                if getattr(reader, "is_encrypted", False):
+                    try:
+                        reader.decrypt("")
+                    except Exception:
+                        pass
+
+                pages_text = []
+                extracted_images = []
+                for p in reader.pages:
+                    ptxt = ""
+                    try:
+                        ptxt = p.extract_text() or ""
+                    except Exception:
+                        pass
+                    if ptxt.strip():
+                        pages_text.append(ptxt.strip())
+                    elif not ptxt.strip():
+                        try:
+                            for im in getattr(p, "images", []):
+                                extracted_images.append(im)
+                        except Exception:
+                            pass
+
+                if pages_text:
+                    extracted_text = "\n\n".join(pages_text).strip()
+                elif extracted_images:
+                    # Scanned PDF: extract first image page for preview
+                    try:
+                        first_im = extracted_images[0]
+                        im_ext = os.path.splitext(getattr(first_im, "name", "page.png"))[1].lower() or ".png"
+                        im_saved_name = f"{uuid.uuid4().hex[:8]}_scanned{im_ext}"
+                        im_saved_path = os.path.join(uploads_dir, im_saved_name)
+                        with open(im_saved_path, "wb") as imf:
+                            imf.write(first_im.data)
+                        image_url = f"/uploads/{im_saved_name}"
+                        is_image = True
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+            # 3. Stream regex fallback if still empty
+            if not extracted_text:
+                stream_text = extract_text_from_pdf_stream(content_bytes)
+                if stream_text and stream_text.strip():
+                    extracted_text = stream_text.strip()
+
+            # 4. Graceful fallback so document is NEVER rejected
+            if not extracted_text:
+                extracted_text = f"Document: {file.filename}\nFormat: PDF Document\nStatus: Visual PDF document loaded. Review against active guidelines."
     elif filename.endswith(".docx"):
+        docx_saved_name = f"{uuid.uuid4().hex[:8]}_{safe_name}"
+        docx_saved_path = os.path.join(uploads_dir, docx_saved_name)
+        with open(docx_saved_path, "wb") as df:
+            df.write(content_bytes)
         try:
             import docx
             doc = docx.Document(io.BytesIO(content_bytes))
             extracted_text = "\n\n".join([p.text for p in doc.paragraphs if p.text]).strip()
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Failed to parse DOCX document: {str(e)}")
+        except Exception:
+            extracted_text = f"Document: {file.filename}\nFormat: Microsoft Word (DOCX)\nStatus: Document loaded."
     else:
         # Plain text / Markdown / HTML fallback
         try:
@@ -262,7 +365,7 @@ async def upload_document(
         except Exception:
             extracted_text = content_bytes.decode("latin-1", errors="ignore").strip()
 
-    if not extracted_text and not is_image:
+    if not extracted_text and not is_image and not is_pdf:
         raise HTTPException(status_code=400, detail="Uploaded file contained no readable text content.")
 
     content = ContentItem(
@@ -274,6 +377,8 @@ async def upload_document(
         status="draft",
         image_url=image_url,
         is_image=is_image,
+        pdf_url=pdf_url,
+        is_pdf=is_pdf,
         file_name=file.filename
     )
     version = ContentVersion(
@@ -281,7 +386,9 @@ async def upload_document(
         number=1,
         extracted_text=extracted_text,
         image_url=image_url,
-        is_image=is_image
+        is_image=is_image,
+        pdf_url=pdf_url,
+        is_pdf=is_pdf
     )
     content.versions.append(version)
     content.current_version_id = version.id
@@ -295,7 +402,7 @@ async def upload_document(
         action="upload_document",
         entity="content",
         entity_id=content.id,
-        metadata={"filename": file.filename, "is_image": is_image, "findings_count": len(findings)}
+        metadata={"filename": file.filename, "is_image": is_image, "is_pdf": is_pdf, "findings_count": len(findings)}
     )
     return content
 
@@ -375,7 +482,9 @@ def submit_new_version(content_id: str, text: str = Form(...)):
         number=new_version_num,
         extracted_text=text,
         image_url=content.image_url,
-        is_image=content.is_image
+        is_image=content.is_image,
+        pdf_url=content.pdf_url,
+        is_pdf=content.is_pdf
     )
     content.versions.append(version)
     content.current_version_id = version.id

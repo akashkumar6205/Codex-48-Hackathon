@@ -113,6 +113,8 @@ class ContentVersion(BaseModel):
     extracted_text: str
     image_url: Optional[str] = None
     is_image: bool = False
+    pdf_url: Optional[str] = None
+    is_pdf: bool = False
     created_at: float = Field(default_factory=time.time)
 
 class ContentItem(BaseModel):
@@ -127,6 +129,8 @@ class ContentItem(BaseModel):
     current_version_id: str = ""
     image_url: Optional[str] = None
     is_image: bool = False
+    pdf_url: Optional[str] = None
+    is_pdf: bool = False
     file_name: Optional[str] = None
     versions: List[ContentVersion] = Field(default_factory=list)
     findings: List[Finding] = Field(default_factory=list)

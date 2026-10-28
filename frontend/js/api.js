@@ -4,7 +4,10 @@
  * Zero external libraries or TypeScript.
  */
 
-const API_BASE = "";
+// When frontend is served from FastAPI root, API_BASE is "" (same origin).
+// When frontend is deployed separately on Vercel/Netlify, API_BASE can be configured via
+// window.BRANDLENS_API_URL or localStorage.getItem("BRANDLENS_API_URL").
+const API_BASE = (typeof window !== "undefined" && (window.BRANDLENS_API_URL || localStorage.getItem("BRANDLENS_API_URL"))) || "";
 
 export const api = {
   // Workspace & Settings

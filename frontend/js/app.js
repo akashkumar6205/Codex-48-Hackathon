@@ -250,49 +250,84 @@ function handleAuthChange(user) {
 }
 
 function setupEventListeners() {
-  // Google Email Login form submit
-  elements.googleEmailLoginForm?.addEventListener("submit", (e) => {
+  let authMode = "signin";
+
+  // Tab switching: Sign In vs Sign Up
+  elements.tabFbSignIn?.addEventListener("click", () => {
+    authMode = "signin";
+    elements.tabFbSignIn.classList.add("active");
+    elements.tabFbSignUp.classList.remove("active");
+    if (elements.wrapFbDisplayName) elements.wrapFbDisplayName.style.display = "none";
+    if (elements.btnSubmitFirebaseAuthText) elements.btnSubmitFirebaseAuthText.textContent = "Sign In";
+    if (elements.fbAuthNotice) elements.fbAuthNotice.style.display = "none";
+  });
+
+  elements.tabFbSignUp?.addEventListener("click", () => {
+    authMode = "signup";
+    elements.tabFbSignUp.classList.add("active");
+    elements.tabFbSignIn.classList.remove("active");
+    if (elements.wrapFbDisplayName) elements.wrapFbDisplayName.style.display = "block";
+    if (elements.btnSubmitFirebaseAuthText) elements.btnSubmitFirebaseAuthText.textContent = "Create Account";
+    if (elements.fbAuthNotice) elements.fbAuthNotice.style.display = "none";
+  });
+
+  // Firebase Auth Form submit (Email/Password)
+  elements.firebaseAuthForm?.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const email = elements.loginGoogleEmail?.value.trim();
-    const role = elements.loginUserRole?.value || "creator";
-    if (!email) {
-      alert("Please enter a valid Google email address.");
+    const email = elements.loginFirebaseEmail?.value.trim();
+    const password = elements.loginFirebasePassword?.value;
+    const displayName = elements.loginFirebaseName?.value.trim();
+    const role = elements.loginUserRole?.value || state.currentRole || "creator";
+
+    if (!email || !password) {
+      alert("Please provide both email and password.");
       return;
     }
-    try {
-      loginWithGoogleEmail(email, role);
-      closeFirebaseConfigModal();
-    } catch (err) {
-      alert(err.message || "Failed to sign in with Google email.");
-    }
-  });
 
-  // Native Firebase OAuth Popup test
-  elements.btnLaunchFirebasePopup?.addEventListener("click", async () => {
-    try {
-      await signInWithGoogle();
-      closeFirebaseConfigModal();
-    } catch (err) {
-      alert("Firebase OAuth Notice: " + (err.message || err));
+    if (elements.btnSubmitFirebaseAuth) {
+      elements.btnSubmitFirebaseAuth.disabled = true;
+      if (elements.btnSubmitFirebaseAuthText) elements.btnSubmitFirebaseAuthText.textContent = "Authenticating...";
     }
-  });
 
-  // Firebase Google Sign In button in header
-  elements.btnGoogleSignIn?.addEventListener("click", async () => {
-    const config = getFirebaseConfig();
-    if (config && config.apiKey && config.apiKey.startsWith("AIzaSy") && config.apiKey.length > 20) {
-      try {
-        const u = await signInWithGoogle();
-        if (u) return;
-      } catch (e) {
-        console.warn("Popup attempt error:", e);
+    try {
+      if (authMode === "signup") {
+        await signUpWithEmailPassword(email, password, displayName, role);
+      } else {
+        await signInWithEmailPassword(email, password);
+      }
+    } catch (err) {
+      if (elements.fbAuthNotice) {
+        elements.fbAuthNotice.textContent = err.message || "Authentication error";
+        elements.fbAuthNotice.style.display = "block";
+      } else {
+        alert("Authentication failed: " + (err.message || err));
+      }
+    } finally {
+      if (elements.btnSubmitFirebaseAuth) {
+        elements.btnSubmitFirebaseAuth.disabled = false;
+        if (elements.btnSubmitFirebaseAuthText) {
+          elements.btnSubmitFirebaseAuthText.textContent = authMode === "signup" ? "Create Account" : "Sign In";
+        }
       }
     }
+  });
+
+  // Native Firebase OAuth Popup
+  elements.btnAuthGooglePopup?.addEventListener("click", async () => {
+    try {
+      await signInWithGoogle();
+    } catch (err) {
+      alert("Google Sign-In notice: " + (err.message || err));
+    }
+  });
+
+  // Firebase Sign In button in header
+  elements.btnGoogleSignIn?.addEventListener("click", () => {
     showFirebaseConfigModal();
   });
 
   elements.btnSignOut?.addEventListener("click", async () => {
-    await signOutGoogle();
+    await signOutFirebase();
   });
 
   elements.btnSettingsGoogleAuth?.addEventListener("click", () => {
@@ -301,17 +336,6 @@ function setupEventListeners() {
 
   elements.btnCloseFirebaseModal?.addEventListener("click", () => {
     closeFirebaseConfigModal();
-  });
-
-  elements.btnSaveFirebaseConfig?.addEventListener("click", () => {
-    const config = {
-      apiKey: elements.fbApiKeyInput?.value.trim() || "",
-      authDomain: elements.fbAuthDomainInput?.value.trim() || "",
-      projectId: elements.fbProjectIdInput?.value.trim() || "",
-      appId: elements.fbAppIdInput?.value.trim() || "",
-    };
-    saveFirebaseConfig(config);
-    alert("Firebase project configuration saved successfully!");
   });
 
   // Role selector
@@ -694,6 +718,7 @@ function setupEventListeners() {
       elements.btnSubmitNewDraft.textContent = "Extracting & Checking...";
       try {
         const created = await api.uploadDocument(formData);
+        if (created && created.id) saveContentToFirestore(created);
         elements.newDraftModal.classList.remove("active");
         elements.draftFileInput.value = "";
         if (elements.modalImagePreviewContainer) elements.modalImagePreviewContainer.style.display = "none";
@@ -721,6 +746,7 @@ function setupEventListeners() {
         creator_id: state.currentUser.id,
         creator_name: state.currentUser.name,
       });
+      if (created && created.id) saveContentToFirestore(created);
       elements.newDraftModal.classList.remove("active");
       elements.draftTextInput.value = "";
       elements.btnSubmitNewDraft.disabled = false;
@@ -1828,7 +1854,7 @@ window.brandlens = {
   selectDraftFromDiff,
   changeDiffVersions,
   signInWithGoogle,
-  signOutGoogle,
+  signOutFirebase,
   showFirebaseConfigModal,
 };
 

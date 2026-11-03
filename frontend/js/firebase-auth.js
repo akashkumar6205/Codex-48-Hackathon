@@ -13,13 +13,22 @@
 const STORAGE_CONFIG_KEY = "brandlens_firebase_config";
 const STORAGE_USER_KEY = "brandlens_auth_user";
 
+export const DEFAULT_FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBgGrE67pw5feJCxndu15fmf3lg2ruM8ag",
+  authDomain: "codex-48.firebaseapp.com",
+  projectId: "codex-48",
+  storageBucket: "codex-48.firebasestorage.app",
+  messagingSenderId: "33915284795",
+  appId: "1:33915284795:web:9a612f7e335aeade939b1e"
+};
+
 let firebaseApp = null;
 let firebaseAuth = null;
 let firestoreDb = null;
 let authListenerCallback = null;
 let currentUser = null;
 
-// Get stored Firebase config or fetch from backend /api/auth/firebase-config
+// Get stored Firebase config or fallback to codex-48 default
 export function getFirebaseConfig() {
   try {
     const raw = localStorage.getItem(STORAGE_CONFIG_KEY);
@@ -27,7 +36,7 @@ export function getFirebaseConfig() {
   } catch (e) {
     console.warn("Error reading stored Firebase config:", e);
   }
-  return null;
+  return DEFAULT_FIREBASE_CONFIG;
 }
 
 export function saveFirebaseConfig(config) {

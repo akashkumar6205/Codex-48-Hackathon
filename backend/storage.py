@@ -22,12 +22,12 @@ class DataStore:
             )
         )
         
-        # 4 Core Roles
+        # 4 Core Roles (Default roles - users authenticate with their Google email)
         self.users: Dict[str, User] = {
-            "usr_creator": User(id="usr_creator", name="Alex Morgan", email="alex.m@inkloom.ai", role="creator"),
-            "usr_reviewer": User(id="usr_reviewer", name="Jordan Hayes", email="jordan.h@inkloom.ai", role="reviewer"),
-            "usr_brand_mgr": User(id="usr_brand_mgr", name="Elena Vance", email="elena.v@inkloom.ai", role="brand_manager"),
-            "usr_admin": User(id="usr_admin", name="Marcus Sterling", email="marcus.s@inkloom.ai", role="admin"),
+            "usr_creator": User(id="usr_creator", name="Creator", email="creator@brandlens.ai", role="creator"),
+            "usr_reviewer": User(id="usr_reviewer", name="Reviewer", email="reviewer@brandlens.ai", role="reviewer"),
+            "usr_brand_mgr": User(id="usr_brand_mgr", name="Brand Manager", email="manager@brandlens.ai", role="brand_manager"),
+            "usr_admin": User(id="usr_admin", name="Admin", email="admin@brandlens.ai", role="admin"),
         }
         
         # Content items

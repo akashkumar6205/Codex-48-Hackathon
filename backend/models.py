@@ -210,7 +210,7 @@ class ContentSubmitRequest(BaseModel):
     content_type: Literal["social", "web", "press", "deck", "email", "article"] = "web"
     channel: str = "Global Website"
     creator_id: str = "usr_creator"
-    creator_name: str = "Alex Morgan"
+    creator_name: str = "Creator"
 
 class FindingActionRequest(BaseModel):
     action: Literal["accept", "edit", "dispute", "override"]

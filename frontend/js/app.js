@@ -822,7 +822,7 @@ function renderStudio() {
   elements.docTitle.textContent = content.title;
   elements.docChannel.textContent = `Channel: ${content.channel}`;
   elements.docVersionNum.textContent = `Version ${content.versions.length}`;
-  elements.docCreator.textContent = `Creator: ${content.creator_name || "Alex Morgan"}`;
+  elements.docCreator.textContent = `Creator: ${content.creator_name || "Author"}`;
   
   // Status pill
   elements.docStatus.textContent = content.status.replace("_", " ");

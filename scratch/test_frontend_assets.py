@@ -65,10 +65,17 @@ def test_frontend_files():
     assert "btnGoogleSignIn" in html_content
     assert "userProfilePill" in html_content
     assert "firebaseConfigModal" in html_content
+    assert "loginGoogleEmail" in html_content
+    assert "googleEmailLoginForm" in html_content
+    assert "btnQuickAlex" not in html_content
+    assert "Alex Morgan (Creator)" not in html_content
 
     # Check Firebase elements in CSS
     assert ".btn-google-signin" in css_content
     assert ".user-profile-pill" in css_content
+
+    assert "loginWithGoogleEmail" in js_content
+    assert "loginWithGoogleEmail" in fb_content
     
     print(f"PASS: All frontend files exist and contain updated modern design tokens.")
     print(f"HTML size: {len(html_content)} bytes")

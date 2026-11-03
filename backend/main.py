@@ -122,12 +122,12 @@ def list_auth_users():
 def get_firebase_config():
     """Returns Firebase project credentials loaded from .env for web client initialization."""
     return {
-        "apiKey": os.environ.get("FIREBASE_API_KEY", ""),
-        "authDomain": os.environ.get("FIREBASE_AUTH_DOMAIN", "brandlens-governance.firebaseapp.com"),
-        "projectId": os.environ.get("FIREBASE_PROJECT_ID", "brandlens-governance"),
-        "storageBucket": os.environ.get("FIREBASE_STORAGE_BUCKET", "brandlens-governance.appspot.com"),
-        "messagingSenderId": os.environ.get("FIREBASE_MESSAGING_SENDER_ID", ""),
-        "appId": os.environ.get("FIREBASE_APP_ID", "")
+        "apiKey": os.environ.get("FIREBASE_API_KEY", "AIzaSyBgGrE67pw5feJCxndu15fmf3lg2ruM8ag"),
+        "authDomain": os.environ.get("FIREBASE_AUTH_DOMAIN", "codex-48.firebaseapp.com"),
+        "projectId": os.environ.get("FIREBASE_PROJECT_ID", "codex-48"),
+        "storageBucket": os.environ.get("FIREBASE_STORAGE_BUCKET", "codex-48.firebasestorage.app"),
+        "messagingSenderId": os.environ.get("FIREBASE_MESSAGING_SENDER_ID", "33915284795"),
+        "appId": os.environ.get("FIREBASE_APP_ID", "1:33915284795:web:9a612f7e335aeade939b1e")
     }
 
 @app.patch("/api/sources/{source_id}/toggle-status")

@@ -28,6 +28,7 @@ class User(BaseModel):
     name: str
     email: str
     role: UserRole
+    photo_url: Optional[str] = None
 
 class WorkspaceSettings(BaseModel):
     ai_provider: str = "mock-grounded-ai"  # or openai / gemini / rules-only
@@ -95,6 +96,7 @@ class Finding(BaseModel):
     sources: List[FindingSource]
     suggestion: str
     status: FindingStatus = "open"
+    applied_text: Optional[str] = None      # Replacement text applied in draft
     detection_method: Literal["regex", "llm", "visual"] = "regex"
     creator_response: Optional[str] = None  # Reason for dispute or edited text
     override_reason: Optional[str] = None   # Reason required for reviewer override
@@ -243,3 +245,11 @@ class SourceCreateRequest(BaseModel):
 class SettingsUpdateRequest(BaseModel):
     rules_only_mode: Optional[bool] = None
     ai_provider: Optional[str] = None
+
+class GoogleAuthRequest(BaseModel):
+    id_token: Optional[str] = None
+    uid: str
+    email: str
+    name: Optional[str] = None
+    photo_url: Optional[str] = None
+    role: Optional[UserRole] = "creator"

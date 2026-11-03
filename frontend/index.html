@@ -7,7 +7,7 @@
   <meta name="description" content="AI brand governance: explains, cites sources, suggests fixes, humans decide.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./css/style.css">
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -18,8 +18,15 @@
   <header class="app-header">
     <div class="header-left">
       <div class="brand-badge">
-        <span class="brand-monogram">BL</span>
+        <div class="brand-monogram">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2L2 7L12 12L22 7L12 2Z" fill="white" fill-opacity="0.95"/>
+            <path d="M2 17L12 22L22 17" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M2 12L12 17L22 12" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
         <span class="brand-name">BrandLens</span>
+        <span class="brand-version-chip">AI Engine</span>
       </div>
 
       <!-- Center Navigation Tabs -->
@@ -32,7 +39,7 @@
       </nav>
     </div>
 
-    <!-- Right Header Controls: Role Selector -->
+    <!-- Right Header Controls: Role Selector & Firebase Google Sign-In -->
     <div class="header-right">
       <div class="role-pill">
         <span class="role-dot"></span>
@@ -44,6 +51,30 @@
         </select>
       </div>
       <span id="currentUserName" style="display: none;">Alex Morgan</span>
+
+      <!-- Sign In With Google Button -->
+      <button class="btn-google-signin" id="btnGoogleSignIn" title="Sign in with Google using Firebase Authentication">
+        <svg class="google-icon" width="16" height="16" viewBox="0 0 24 24">
+          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+        </svg>
+        <span>Sign in with Google</span>
+      </button>
+
+      <!-- Authenticated User Profile Pill -->
+      <div class="user-profile-pill" id="userProfilePill" style="display: none;">
+        <div class="user-avatar-wrap">
+          <img class="user-avatar-img" id="userAvatarImg" src="" alt="Profile" style="display: none;" />
+          <span class="user-avatar-fallback" id="userAvatarFallback">G</span>
+        </div>
+        <div class="user-info-text">
+          <span class="user-display-name" id="userDisplayName">User</span>
+          <span class="user-auth-badge">Google</span>
+        </div>
+        <button class="btn-signout" id="btnSignOut" title="Sign out of Google account">Sign out</button>
+      </div>
     </div>
   </header>
 
@@ -83,6 +114,7 @@
             </div>
 
             <div class="doc-actions">
+              <button class="btn-subtle" id="btnEditDocCopy" title="Directly edit the document draft copy">✎ Edit Copy</button>
               <button class="btn-subtle" id="btnRerunCheck" title="Re-evaluate copy against active guidelines">Re-check</button>
               <button class="btn-subtle btn-danger" id="btnDeleteDraft" title="Delete draft">Delete</button>
               <button class="btn-primary" id="btnNewDraft">+ New Draft</button>
@@ -101,6 +133,21 @@
             <!-- Reading Surface -->
             <div class="reading-surface" id="docTextCanvas">
               <!-- Populated by JS -->
+            </div>
+
+            <!-- Inline Draft Editor (Toggleable from 'Edit Copy') -->
+            <div class="doc-editor-surface" id="docEditContainer" style="display: none;">
+              <div class="editor-header-bar">
+                <div>
+                  <h3 class="editor-title">Edit Document Draft</h3>
+                  <p class="editor-subtitle">Modify copy directly in the front of the page. Saving creates a new revision and automatically runs guideline verification.</p>
+                </div>
+              </div>
+              <textarea class="doc-inline-textarea" id="docEditTextarea" placeholder="Write or revise document copy here..."></textarea>
+              <div class="editor-action-bar">
+                <button type="button" class="btn-subtle" id="btnCancelDocEdit">Cancel</button>
+                <button type="button" class="btn-primary" id="btnSaveDocEdit">Save &amp; Re-check</button>
+              </div>
             </div>
 
             <!-- Diff View Container -->
@@ -309,6 +356,29 @@
             </select>
           </div>
         </div>
+
+        <!-- Firebase Google Authentication Card -->
+        <div class="settings-card" style="margin-top: 16px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <svg width="18" height="18" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+              </svg>
+              <h3 class="settings-heading" style="margin: 0;">Firebase Google Authentication</h3>
+            </div>
+            <span class="status-badge status-approved" id="fbStatusBadge">Configured</span>
+          </div>
+          <p class="settings-text">
+            Enterprise Single Sign-On (SSO) powered by Firebase Authentication with Google Identity Platform. Authenticated users are assigned corporate governance roles and logged in the immutable audit trail.
+          </p>
+          <div style="display: flex; gap: 10px; margin-top: 14px; align-items: center; flex-wrap: wrap;">
+            <button type="button" class="btn-primary" id="btnSettingsGoogleAuth">Manage Firebase Auth / Sign In</button>
+            <span id="txtAuthAccountInfo" style="font-size: 12.5px; color: var(--muted);">Not signed in</span>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -426,6 +496,87 @@
       <div class="modal-actions">
         <button class="btn-subtle" id="btnCancelNewSource">Cancel</button>
         <button class="btn-primary" id="btnSaveNewSource">Save Guideline</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase Google Authentication Modal (Setup & Connect) -->
+  <div class="modal-backdrop" id="firebaseConfigModal">
+    <div class="modal-window" style="max-width: 520px;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <svg width="22" height="22" viewBox="0 0 24 24">
+          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+        </svg>
+        <h3 class="modal-heading" style="margin: 0;">Sign in with Google (Firebase)</h3>
+      </div>
+
+      <div id="fbConfigNotice" style="font-size: 12.5px; color: #93c5fd; background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.25); padding: 10px 14px; border-radius: 8px; line-height: 1.5;">
+        Firebase Authentication with Google Identity is configured. Select a Google profile below or update your project keys.
+      </div>
+
+      <!-- Quick 1-Click Connect Profiles -->
+      <div style="margin-top: 4px;">
+        <span class="modal-label">Quick Sign-in with Google Profile:</span>
+        <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 6px;">
+          <button type="button" class="btn-subtle" id="btnQuickAlex" style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; text-align: left;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="width: 28px; height: 28px; border-radius: 50%; background: #4f46e5; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px;">AM</span>
+              <div>
+                <div style="font-weight: 600; color: #ffffff;">Alex Morgan</div>
+                <div style="font-size: 11.5px; color: var(--muted);">alex.morgan@brandlens.google</div>
+              </div>
+            </div>
+            <span class="status-badge status-draft" style="font-size: 10px;">Creator</span>
+          </button>
+
+          <button type="button" class="btn-subtle" id="btnQuickElena" style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; text-align: left;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="width: 28px; height: 28px; border-radius: 50%; background: #10b981; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px;">EV</span>
+              <div>
+                <div style="font-weight: 600; color: #ffffff;">Elena Vance</div>
+                <div style="font-size: 11.5px; color: var(--muted);">elena.vance@brandlens.google</div>
+              </div>
+            </div>
+            <span class="status-badge status-approved" style="font-size: 10px;">Brand Manager</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Firebase Custom Project Keys (Collapsible) -->
+      <div style="margin-top: 10px; border-top: 1px solid var(--border); padding-top: 12px;">
+        <details>
+          <summary style="font-size: 12.5px; color: var(--muted); cursor: pointer; font-weight: 500;">
+            ⚙️ Advanced: Custom Firebase Web Project Keys
+          </summary>
+          <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 12px;">
+            <div class="modal-field">
+              <label for="fbApiKeyInput" class="modal-label">apiKey</label>
+              <input type="text" class="modal-text-input" id="fbApiKeyInput" placeholder="AIzaSy...">
+            </div>
+            <div class="modal-field">
+              <label for="fbAuthDomainInput" class="modal-label">authDomain</label>
+              <input type="text" class="modal-text-input" id="fbAuthDomainInput" placeholder="your-app.firebaseapp.com">
+            </div>
+            <div class="grid-2">
+              <div class="modal-field">
+                <label for="fbProjectIdInput" class="modal-label">projectId</label>
+                <input type="text" class="modal-text-input" id="fbProjectIdInput" placeholder="your-project-id">
+              </div>
+              <div class="modal-field">
+                <label for="fbAppIdInput" class="modal-label">appId</label>
+                <input type="text" class="modal-text-input" id="fbAppIdInput" placeholder="1:123456:web:...">
+              </div>
+            </div>
+            <button type="button" class="btn-subtle" id="btnSaveFirebaseConfig" style="align-self: flex-start; font-size: 12px;">Save Project Keys</button>
+          </div>
+        </details>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn-subtle" id="btnCloseFirebaseModal">Close</button>
       </div>
     </div>
   </div>

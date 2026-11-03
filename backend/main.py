@@ -20,7 +20,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from backend.models import (
     ContentSubmitRequest, FindingActionRequest, CommentCreateRequest,
     DecisionCreateRequest, SourceCreateRequest, SettingsUpdateRequest,
-    ContentItem, ContentVersion, Source, Finding, Comment, Decision, AuditEvent
+    ContentItem, ContentVersion, Source, Finding, Comment, Decision, AuditEvent,
+    User, GoogleAuthRequest
 )
 from backend.storage import store
 from backend.review_engine import review_engine
@@ -65,6 +66,38 @@ def get_workspace():
         "workspace": store.workspace,
         "users": list(store.users.values())
     }
+
+# -------------------------------------------------------------
+# Firebase Google Authentication
+# -------------------------------------------------------------
+@app.post("/api/auth/google")
+def auth_google(req: GoogleAuthRequest):
+    user_id = req.uid if req.uid.startswith("usr_") else f"usr_{req.uid[:12]}"
+    user = User(
+        id=user_id,
+        workspace_id="ws_default",
+        name=req.name or req.email.split("@")[0].title(),
+        email=req.email,
+        role=req.role or "creator",
+        photo_url=req.photo_url
+    )
+    store.users[user_id] = user
+    store.log_audit(
+        actor_id=user_id,
+        action="google_sign_in",
+        entity="user",
+        entity_id=user_id,
+        metadata={"email": req.email, "name": user.name, "provider": "firebase_google"}
+    )
+    return {
+        "status": "authenticated",
+        "user": user,
+        "token": req.id_token or f"mock_token_{user_id}"
+    }
+
+@app.get("/api/auth/users")
+def list_auth_users():
+    return list(store.users.values())
 
 @app.patch("/api/sources/{source_id}/toggle-status")
 def toggle_source_status(source_id: str):
@@ -520,11 +553,13 @@ def submit_new_version(content_id: str, text: str = Form(...)):
     content.updated_at = time.time()
     
     # Re-run review engine on new text
+    img_path = os.path.join(uploads_dir, os.path.basename(content.image_url)) if content.image_url else None
     findings = review_engine.run_check(
         text,
         content.content_type,
         content.channel,
-        is_image=bool(content.image_url or content.is_image)
+        is_image=bool(content.image_url or content.is_image),
+        image_path=img_path
     )
     content.findings = findings
     
@@ -552,6 +587,7 @@ def handle_finding_action(content_id: str, finding_id: str, req: FindingActionRe
     
     if req.action == "accept":
         finding.status = "accepted"
+        finding.applied_text = finding.suggestion
         # Apply the suggested fix to the content text if desired by creator
         current_ver = next((v for v in content.versions if v.id == content.current_version_id), content.versions[-1])
         old_text = current_ver.extracted_text
@@ -561,7 +597,11 @@ def handle_finding_action(content_id: str, finding_id: str, req: FindingActionRe
             new_ver = ContentVersion(
                 content_id=content.id,
                 number=len(content.versions) + 1,
-                extracted_text=new_text
+                extracted_text=new_text,
+                image_url=content.image_url,
+                is_image=content.is_image,
+                pdf_url=content.pdf_url,
+                is_pdf=content.is_pdf
             )
             content.versions.append(new_ver)
             content.current_version_id = new_ver.id
@@ -570,13 +610,18 @@ def handle_finding_action(content_id: str, finding_id: str, req: FindingActionRe
     elif req.action == "edit":
         finding.status = "edited"
         finding.creator_response = req.edited_text or req.reason
+        finding.applied_text = req.edited_text
         if req.edited_text:
             current_ver = next((v for v in content.versions if v.id == content.current_version_id), content.versions[-1])
             new_text = current_ver.extracted_text.replace(finding.excerpt.text, req.edited_text, 1)
             new_ver = ContentVersion(
                 content_id=content.id,
                 number=len(content.versions) + 1,
-                extracted_text=new_text
+                extracted_text=new_text,
+                image_url=content.image_url,
+                is_image=content.is_image,
+                pdf_url=content.pdf_url,
+                is_pdf=content.is_pdf
             )
             content.versions.append(new_ver)
             content.current_version_id = new_ver.id

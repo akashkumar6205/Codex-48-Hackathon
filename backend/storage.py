@@ -30,10 +30,6 @@ class DataStore:
             "usr_admin": User(id="usr_admin", name="Marcus Sterling", email="marcus.s@inkloom.ai", role="admin"),
         }
         
-        # Approved Knowledge Sources (PRD Section 7.1)
-        self.sources: Dict[str, Source] = {}
-        self.init_seed_sources()
-
         # Content items
         self.content_items: Dict[str, ContentItem] = {}
         
@@ -43,6 +39,10 @@ class DataStore:
         
         # Immutable Audit Trail (PRD Section 7.5 WF-5)
         self.audit_events: List[AuditEvent] = []
+
+        # Approved Knowledge Sources (PRD Section 7.1)
+        self.sources: Dict[str, Source] = {}
+        self.init_seed_sources()
 
     def log_audit(self, actor_id: str, action: str, entity: str, entity_id: str, metadata: dict = None):
         user = self.users.get(actor_id)

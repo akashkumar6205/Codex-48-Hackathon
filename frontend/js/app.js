@@ -5,6 +5,16 @@
  */
 
 import { api } from "./api.js";
+import {
+  initFirebaseAuth,
+  signInWithGoogle,
+  signOutGoogle,
+  showFirebaseConfigModal,
+  closeFirebaseConfigModal,
+  saveFirebaseConfig,
+  authenticateWithGoogleProfile,
+  getFirebaseConfig
+} from "./firebase-auth.js";
 
 // Application State
 const state = {
@@ -22,6 +32,8 @@ const state = {
   workspace: null,
   submissionMode: "paste", // 'paste' or 'file'
   studioMobilePane: "doc", // 'doc' or 'findings' for screens <= 768px
+  diffCompareV1: 0,
+  diffCompareV2: null,
 };
 
 // Role user mapping
@@ -62,6 +74,11 @@ const elements = {
   btnDiffTab: document.getElementById("btnDiffTab"),
   btnTextTab: document.getElementById("btnTextTab"),
   diffContainer: document.getElementById("diffContainer"),
+  btnEditDocCopy: document.getElementById("btnEditDocCopy"),
+  docEditContainer: document.getElementById("docEditContainer"),
+  docEditTextarea: document.getElementById("docEditTextarea"),
+  btnCancelDocEdit: document.getElementById("btnCancelDocEdit"),
+  btnSaveDocEdit: document.getElementById("btnSaveDocEdit"),
 
   // Knowledge Base
   sourcesGrid: document.getElementById("sourcesGrid"),
@@ -119,6 +136,26 @@ const elements = {
   modalOcrProgressBar: document.getElementById("modalOcrProgressBar"),
   modalOcrTextSection: document.getElementById("modalOcrTextSection"),
   modalOcrTextarea: document.getElementById("modalOcrTextarea"),
+
+  // Firebase Google Auth Elements
+  btnGoogleSignIn: document.getElementById("btnGoogleSignIn"),
+  userProfilePill: document.getElementById("userProfilePill"),
+  userAvatarImg: document.getElementById("userAvatarImg"),
+  userAvatarFallback: document.getElementById("userAvatarFallback"),
+  userDisplayName: document.getElementById("userDisplayName"),
+  btnSignOut: document.getElementById("btnSignOut"),
+  firebaseConfigModal: document.getElementById("firebaseConfigModal"),
+  btnSettingsGoogleAuth: document.getElementById("btnSettingsGoogleAuth"),
+  txtAuthAccountInfo: document.getElementById("txtAuthAccountInfo"),
+  fbStatusBadge: document.getElementById("fbStatusBadge"),
+  btnQuickAlex: document.getElementById("btnQuickAlex"),
+  btnQuickElena: document.getElementById("btnQuickElena"),
+  btnSaveFirebaseConfig: document.getElementById("btnSaveFirebaseConfig"),
+  btnCloseFirebaseModal: document.getElementById("btnCloseFirebaseModal"),
+  fbApiKeyInput: document.getElementById("fbApiKeyInput"),
+  fbAuthDomainInput: document.getElementById("fbAuthDomainInput"),
+  fbProjectIdInput: document.getElementById("fbProjectIdInput"),
+  fbAppIdInput: document.getElementById("fbAppIdInput"),
 };
 
 let activeModalCallback = null;
@@ -126,12 +163,130 @@ let activeModalCallback = null;
 // Initialization
 async function init() {
   setupEventListeners();
+  await initFirebaseAuth(handleAuthChange);
   await loadWorkspace();
   await loadSources();
   await reloadDocumentList();
 }
 
+function handleAuthChange(user) {
+  if (user) {
+    if (elements.btnGoogleSignIn) elements.btnGoogleSignIn.style.display = "none";
+    if (elements.userProfilePill) elements.userProfilePill.style.display = "inline-flex";
+    if (elements.userDisplayName) elements.userDisplayName.textContent = user.name;
+
+    if (user.photoUrl && elements.userAvatarImg) {
+      elements.userAvatarImg.src = user.photoUrl;
+      elements.userAvatarImg.style.display = "block";
+      if (elements.userAvatarFallback) elements.userAvatarFallback.style.display = "none";
+    } else if (elements.userAvatarFallback) {
+      const initials = (user.name || "U").split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
+      elements.userAvatarFallback.textContent = initials || "G";
+      elements.userAvatarFallback.style.display = "inline";
+      if (elements.userAvatarImg) elements.userAvatarImg.style.display = "none";
+    }
+
+    state.currentUser = {
+      id: user.uid,
+      name: user.name,
+      email: user.email,
+      role: state.currentRole,
+      photoUrl: user.photoUrl || null,
+    };
+
+    if (elements.currentUserName) elements.currentUserName.textContent = user.name;
+    if (elements.txtAuthAccountInfo) elements.txtAuthAccountInfo.textContent = `Signed in as ${user.name} (${user.email})`;
+    if (elements.fbStatusBadge) {
+      elements.fbStatusBadge.textContent = "Active (Google Auth)";
+      elements.fbStatusBadge.className = "status-badge status-approved";
+    }
+
+    // Sync user with backend session & audit log
+    api.syncGoogleUser({
+      uid: user.uid,
+      email: user.email,
+      name: user.name,
+      photo_url: user.photoUrl,
+      role: state.currentRole,
+    }).catch((err) => console.warn("Google auth sync notice:", err));
+
+  } else {
+    if (elements.btnGoogleSignIn) elements.btnGoogleSignIn.style.display = "inline-flex";
+    if (elements.userProfilePill) elements.userProfilePill.style.display = "none";
+
+    state.currentUser = ROLE_USERS[state.currentRole];
+    if (elements.currentUserName) elements.currentUserName.textContent = state.currentUser.name;
+    if (elements.txtAuthAccountInfo) elements.txtAuthAccountInfo.textContent = "Not signed in";
+    if (elements.fbStatusBadge) {
+      elements.fbStatusBadge.textContent = "Configured";
+      elements.fbStatusBadge.className = "status-badge status-in_review";
+    }
+  }
+}
+
 function setupEventListeners() {
+  // Firebase Google Authentication Handlers
+  elements.btnGoogleSignIn?.addEventListener("click", async () => {
+    try {
+      if (elements.btnGoogleSignIn) {
+        elements.btnGoogleSignIn.disabled = true;
+        elements.btnGoogleSignIn.style.opacity = "0.7";
+      }
+      await signInWithGoogle();
+    } catch (err) {
+      console.warn("Google sign-in check:", err);
+      showFirebaseConfigModal(err.message || "Sign in cancelled or configuration required.");
+    } finally {
+      if (elements.btnGoogleSignIn) {
+        elements.btnGoogleSignIn.disabled = false;
+        elements.btnGoogleSignIn.style.opacity = "1";
+      }
+    }
+  });
+
+  elements.btnSignOut?.addEventListener("click", async () => {
+    await signOutGoogle();
+  });
+
+  elements.btnSettingsGoogleAuth?.addEventListener("click", () => {
+    showFirebaseConfigModal();
+  });
+
+  elements.btnCloseFirebaseModal?.addEventListener("click", () => {
+    closeFirebaseConfigModal();
+  });
+
+  elements.btnQuickAlex?.addEventListener("click", () => {
+    authenticateWithGoogleProfile({
+      uid: "usr_alex_google",
+      name: "Alex Morgan",
+      email: "alex.morgan@brandlens.google",
+      photoUrl: null,
+    });
+    closeFirebaseConfigModal();
+  });
+
+  elements.btnQuickElena?.addEventListener("click", () => {
+    authenticateWithGoogleProfile({
+      uid: "usr_elena_google",
+      name: "Elena Vance",
+      email: "elena.vance@brandlens.google",
+      photoUrl: null,
+    });
+    closeFirebaseConfigModal();
+  });
+
+  elements.btnSaveFirebaseConfig?.addEventListener("click", () => {
+    const config = {
+      apiKey: elements.fbApiKeyInput?.value.trim() || "",
+      authDomain: elements.fbAuthDomainInput?.value.trim() || "",
+      projectId: elements.fbProjectIdInput?.value.trim() || "",
+      appId: elements.fbAppIdInput?.value.trim() || "",
+    };
+    saveFirebaseConfig(config);
+    alert("Firebase project configuration saved successfully!");
+  });
+
   // Role selector
   elements.roleSelect.addEventListener("change", (e) => {
     state.currentRole = e.target.value;
@@ -223,6 +378,7 @@ function setupEventListeners() {
     elements.btnDiffTab.classList.add("active");
     elements.btnTextTab.classList.remove("active");
     elements.docTextCanvas.style.display = "none";
+    if (elements.docEditContainer) elements.docEditContainer.style.display = "none";
     elements.diffContainer.style.display = "block";
     renderDiffView();
   });
@@ -231,8 +387,63 @@ function setupEventListeners() {
     elements.btnTextTab.classList.add("active");
     elements.btnDiffTab.classList.remove("active");
     elements.docTextCanvas.style.display = "block";
+    if (elements.docEditContainer) elements.docEditContainer.style.display = "none";
     elements.diffContainer.style.display = "none";
   });
+
+  // Direct Inline Draft Editing in Studio
+  if (elements.btnEditDocCopy) {
+    elements.btnEditDocCopy.addEventListener("click", () => {
+      if (!state.currentContentData || !state.currentContentData.content) {
+        alert("Please select or submit a document draft to edit.");
+        return;
+      }
+      const { content } = state.currentContentData;
+      const currentVer = content.versions.find((v) => v.id === content.current_version_id) || content.versions[content.versions.length - 1];
+      const rawText = currentVer ? currentVer.extracted_text : "";
+
+      elements.docEditTextarea.value = rawText;
+      elements.docTextCanvas.style.display = "none";
+      elements.diffContainer.style.display = "none";
+      elements.btnTextTab.classList.add("active");
+      elements.btnDiffTab.classList.remove("active");
+      elements.docEditContainer.style.display = "flex";
+      elements.docEditTextarea.focus();
+    });
+  }
+
+  if (elements.btnCancelDocEdit) {
+    elements.btnCancelDocEdit.addEventListener("click", () => {
+      elements.docEditContainer.style.display = "none";
+      elements.docTextCanvas.style.display = "block";
+    });
+  }
+
+  if (elements.btnSaveDocEdit) {
+    elements.btnSaveDocEdit.addEventListener("click", async () => {
+      if (!state.currentContentData || !state.currentContentData.content) return;
+      const newText = elements.docEditTextarea.value.trim();
+      if (!newText) {
+        alert("Draft copy cannot be empty.");
+        return;
+      }
+
+      elements.btnSaveDocEdit.disabled = true;
+      elements.btnSaveDocEdit.textContent = "Saving & Re-checking...";
+
+      try {
+        await api.submitNewVersion(state.activeContentId, newText);
+        elements.docEditContainer.style.display = "none";
+        elements.docTextCanvas.style.display = "block";
+        await loadContent(state.activeContentId);
+      } catch (err) {
+        alert("Error saving draft revision: " + err.message);
+      } finally {
+        elements.btnSaveDocEdit.disabled = false;
+        elements.btnSaveDocEdit.textContent = "Save & Re-check";
+      }
+    });
+  }
 
   // Knowledge base search
   elements.kbSearchInput.addEventListener("input", (e) => {
@@ -556,6 +767,7 @@ async function reloadDocumentList(preferredId = null) {
 }
 
 function renderEmptyStudio() {
+  if (elements.docEditContainer) elements.docEditContainer.style.display = "none";
   elements.docTitle.textContent = "No Document Selected";
   elements.docStatus.textContent = "EMPTY";
   elements.docStatus.className = "content-status-pill status-draft";
@@ -592,6 +804,10 @@ function renderStudio() {
     renderEmptyStudio();
     return;
   }
+  if (elements.docEditContainer) elements.docEditContainer.style.display = "none";
+  if (elements.docTextCanvas && (!elements.btnDiffTab || !elements.btnDiffTab.classList.contains("active"))) {
+    elements.docTextCanvas.style.display = "block";
+  }
   const { content } = state.currentContentData;
   elements.docTitle.textContent = content.title;
   elements.docChannel.textContent = `Channel: ${content.channel}`;
@@ -605,6 +821,9 @@ function renderStudio() {
   updateRoleSpecificUI();
   renderHighlightedText();
   renderFindings();
+  if (elements.btnDiffTab && elements.btnDiffTab.classList.contains("active")) {
+    renderDiffView();
+  }
 }
 
 function isHashedOrBinaryText(text) {
@@ -627,22 +846,75 @@ function generateHighlightedHtml(fullText, findings) {
   let html = "";
   let lastIndex = 0;
 
-  const matchableFindings = findings
-    .filter((f) => f.excerpt && f.excerpt.text && fullText.includes(f.excerpt.text))
-    .map((f) => {
-      const idx = fullText.indexOf(f.excerpt.text);
-      return { ...f, start: idx, end: idx + f.excerpt.text.length };
-    })
-    .sort((a, b) => a.start - b.start);
+  const matchedList = [];
+  for (const f of findings) {
+    const isAccepted = f.status === "accepted";
+    const isEdited = f.status === "edited";
 
-  for (const f of matchableFindings) {
+    // Determine the text to locate in current revision
+    let matchStr = "";
+    if (isAccepted) {
+      if (f.applied_text && fullText.includes(f.applied_text)) {
+        matchStr = f.applied_text;
+      } else if (f.suggestion && fullText.includes(f.suggestion)) {
+        matchStr = f.suggestion;
+      } else if (f.excerpt && f.excerpt.text && fullText.includes(f.excerpt.text)) {
+        matchStr = f.excerpt.text;
+      }
+    } else if (isEdited) {
+      if (f.applied_text && fullText.includes(f.applied_text)) {
+        matchStr = f.applied_text;
+      } else if (f.creator_response && fullText.includes(f.creator_response)) {
+        matchStr = f.creator_response;
+      } else if (f.excerpt && f.excerpt.text && fullText.includes(f.excerpt.text)) {
+        matchStr = f.excerpt.text;
+      }
+    } else if (f.excerpt && f.excerpt.text && fullText.includes(f.excerpt.text)) {
+      matchStr = f.excerpt.text;
+    }
+
+    if (matchStr) {
+      const idx = fullText.indexOf(matchStr);
+      if (idx !== -1) {
+        matchedList.push({
+          ...f,
+          matchStr,
+          start: idx,
+          end: idx + matchStr.length,
+          isChanged: (isAccepted || isEdited) && matchStr !== (f.excerpt ? f.excerpt.text : "")
+        });
+      }
+    }
+  }
+
+  matchedList.sort((a, b) => a.start - b.start);
+
+  for (const f of matchedList) {
     if (f.start < lastIndex) continue;
     html += escapeHtml(fullText.substring(lastIndex, f.start));
 
-    const isResolved = f.status === "accepted" || f.status === "overridden";
+    const isResolved = f.status === "accepted" || f.status === "overridden" || f.status === "edited";
     const isSelected = f.id === state.activeFindingId;
+    const isAccepted = f.status === "accepted";
+    const isEdited = f.status === "edited";
 
-    html += `<span class="highlight-finding highlight-${f.category} ${isSelected ? "selected" : ""} ${isResolved ? "resolved" : ""}" data-finding-id="${f.id}" title="Flagged: ${escapeHtml(f.reason)}">${escapeHtml(f.excerpt.text)}</span>`;
+    let extraClass = "";
+    let badgeHtml = "";
+    let hoverTitle = "";
+
+    if (isAccepted) {
+      extraClass = "highlight-accepted";
+      badgeHtml = `<span class="change-tag-badge">✓ Accepted</span>`;
+      hoverTitle = `Accepted Fix: '${f.excerpt ? f.excerpt.text : ""}' replaced with '${f.matchStr}'`;
+    } else if (isEdited) {
+      extraClass = "highlight-edited";
+      badgeHtml = `<span class="change-tag-badge">✎ Edited</span>`;
+      hoverTitle = `Custom Edit: '${f.excerpt ? f.excerpt.text : ""}' changed to '${f.matchStr}'`;
+    } else {
+      hoverTitle = `Flagged: ${f.reason}`;
+    }
+
+    html += `<span class="highlight-finding highlight-${f.category} ${isSelected ? "selected" : ""} ${isResolved ? "resolved" : ""} ${extraClass}" data-finding-id="${f.id}" title="${escapeHtml(hoverTitle)}">${badgeHtml}${escapeHtml(f.matchStr)}</span>`;
     lastIndex = f.end;
   }
   html += escapeHtml(fullText.substring(lastIndex));
@@ -967,22 +1239,299 @@ async function overrideFinding(findingId) {
   );
 }
 
-// Diff View
+// ---------------- Revision Diff & Checked Drafts Inspector ----------------
+
+// Word-level LCS Diff Algorithm
+function computeWordDiff(textA, textB) {
+  if (!textA && !textB) return { diffA: "", diffB: "", changesCount: 0 };
+  if (!textA) return { diffA: "", diffB: `<span class="diff-add">${escapeHtml(textB)}</span>`, changesCount: 1 };
+  if (!textB) return { diffA: `<span class="diff-del">${escapeHtml(textA)}</span>`, diffB: "", changesCount: 1 };
+
+  const tokensA = textA.match(/\S+|\s+/g) || [];
+  const tokensB = textB.match(/\S+|\s+/g) || [];
+
+  const m = tokensA.length;
+  const n = tokensB.length;
+
+  if (m * n > 2500000) {
+    return {
+      diffA: `<span class="diff-del">${escapeHtml(textA)}</span>`,
+      diffB: `<span class="diff-add">${escapeHtml(textB)}</span>`,
+      changesCount: 1,
+    };
+  }
+
+  const dp = Array.from({ length: m + 1 }, () => new Uint16Array(n + 1));
+  for (let i = 0; i < m; i++) {
+    for (let j = 0; j < n; j++) {
+      if (tokensA[i] === tokensB[j]) {
+        dp[i + 1][j + 1] = dp[i][j] + 1;
+      } else {
+        dp[i + 1][j + 1] = Math.max(dp[i + 1][j], dp[i][j + 1]);
+      }
+    }
+  }
+
+  let i = m;
+  let j = n;
+  const resultA = [];
+  const resultB = [];
+  let changesCount = 0;
+
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && tokensA[i - 1] === tokensB[j - 1]) {
+      resultA.unshift(escapeHtml(tokensA[i - 1]));
+      resultB.unshift(escapeHtml(tokensB[j - 1]));
+      i--;
+      j--;
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      resultB.unshift(`<span class="diff-add">${escapeHtml(tokensB[j - 1])}</span>`);
+      changesCount++;
+      j--;
+    } else if (i > 0 && (j === 0 || dp[i][j - 1] < dp[i - 1][j])) {
+      resultA.unshift(`<span class="diff-del">${escapeHtml(tokensA[i - 1])}</span>`);
+      changesCount++;
+      i--;
+    }
+  }
+
+  return {
+    diffA: resultA.join(""),
+    diffB: resultB.join(""),
+    changesCount,
+  };
+}
+
+// Select a draft directly from the Revision Diff strip
+async function selectDraftFromDiff(draftId) {
+  if (!draftId) return;
+  state.activeContentId = draftId;
+  if (elements.docSelect) elements.docSelect.value = draftId;
+  state.diffCompareV1 = 0;
+  state.diffCompareV2 = null;
+  await loadContent(draftId);
+  renderDiffView();
+}
+
+// Change which versions are compared in the Diff view
+function changeDiffVersions(v1Index, v2Index) {
+  state.diffCompareV1 = parseInt(v1Index, 10);
+  state.diffCompareV2 = parseInt(v2Index, 10);
+  renderDiffView();
+}
+
+// Render Revision Diff View
 function renderDiffView() {
-  const { content } = state.currentContentData;
-  if (!content || content.versions.length < 2) {
-    elements.diffContainer.innerHTML = `<p style="color: var(--faint); padding: 20px;">No earlier revisions to compare. Accept fixes or submit a revised version to view live diffs.</p>`;
+  const content = state.currentContentData ? state.currentContentData.content : null;
+  const recentDrafts = [...(state.contentList || [])].sort((a, b) => (b.updated_at || b.created_at || 0) - (a.updated_at || a.created_at || 0));
+
+  // 1. Build Recently Checked Drafts Strip
+  let recentDraftsHtml = "";
+  if (recentDrafts.length > 0) {
+    recentDraftsHtml = `
+      <div class="recent-drafts-panel">
+        <div class="recent-drafts-header">
+          <div class="recent-drafts-title">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+            <span>Recently Checked Drafts (${recentDrafts.length})</span>
+          </div>
+          <span class="recent-drafts-hint">Select any draft below to inspect its revisions &amp; visual assets</span>
+        </div>
+
+        <div class="recent-drafts-scroll">
+          ${recentDrafts.map((d) => {
+            const isImg = d.is_image || !!d.image_url || (d.file_name && /\.(png|jpe?g|webp|gif|svg|bmp)$/i.test(d.file_name));
+            const isPdf = d.is_pdf || !!d.pdf_url || (d.file_name && /\.pdf$/i.test(d.file_name));
+            const typeBadge = isImg
+              ? `<span class="recent-draft-type-badge badge-type-image">🖼️ Image</span>`
+              : (isPdf ? `<span class="recent-draft-type-badge badge-type-pdf">📄 PDF</span>` : `<span class="recent-draft-type-badge badge-type-text">✍️ Text</span>`);
+            const isActive = content && d.id === content.id;
+            const verCount = d.versions ? d.versions.length : 1;
+            const dateStr = d.updated_at || d.created_at ? new Date((d.updated_at || d.created_at) * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+
+            return `
+              <div class="recent-draft-card ${isActive ? "active" : ""}" onclick="window.brandlens.selectDraftFromDiff('${d.id}')" title="Click to view diff for ${escapeHtml(d.title)}">
+                <div class="recent-draft-top">
+                  ${typeBadge}
+                  <span class="recent-draft-version">v${verCount}</span>
+                </div>
+                <div class="recent-draft-title">${escapeHtml(d.title || "Untitled Draft")}</div>
+                <div class="recent-draft-meta">
+                  <span class="status-badge status-${d.status}" style="font-size: 10px; padding: 1px 6px;">${d.status.replace("_", " ")}</span>
+                  <span>${dateStr}</span>
+                </div>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  // If no content selected
+  if (!content) {
+    elements.diffContainer.innerHTML = `
+      <div class="diff-view-wrapper">
+        ${recentDraftsHtml}
+        <div class="diff-single-version-card">
+          <p style="color: var(--muted); text-align: center; padding: 24px;">No draft selected. Please submit or select a draft from above.</p>
+        </div>
+      </div>
+    `;
     return;
   }
-  const v1 = content.versions[0].extracted_text;
-  const vCurrent = content.versions[content.versions.length - 1].extracted_text;
+
+  const versions = content.versions || [];
+  const currentVersion = versions.find((v) => v.id === content.current_version_id) || versions[versions.length - 1];
+
+  // Visual Assets (Image / PDF)
+  const imageUrl = content.image_url || (currentVersion && currentVersion.image_url);
+  const isImageDraft = content.is_image || !!imageUrl || (content.file_name && /\.(png|jpe?g|webp|gif|svg|bmp)$/i.test(content.file_name));
+
+  const pdfUrl = content.pdf_url || (currentVersion && currentVersion.pdf_url);
+  const isPdfDraft = content.is_pdf || !!pdfUrl || (content.file_name && /\.pdf$/i.test(content.file_name));
+
+  let visualAssetHtml = "";
+  if (isImageDraft) {
+    visualAssetHtml = `
+      <div class="diff-visual-card">
+        <div class="diff-visual-toolbar">
+          <div class="diff-visual-info">
+            <span class="badge-visual-asset">Drafted Image Asset</span>
+            <span class="diff-filename">${escapeHtml(content.file_name || content.title)}</span>
+          </div>
+          <div class="diff-visual-actions">
+            ${imageUrl ? `<a href="${escapeHtml(imageUrl)}" target="_blank" rel="noopener noreferrer" class="btn-subtle" style="font-size: 11.5px; padding: 4px 10px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+              <span>Open Full Size</span>
+              <span>↗</span>
+            </a>` : ""}
+          </div>
+        </div>
+        <div class="diff-visual-viewport">
+          ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(content.title)}" class="diff-preview-image" />` : `<div style="color: var(--muted); padding: 30px;">[Visual Image Asset Attached]</div>`}
+        </div>
+      </div>
+    `;
+  } else if (isPdfDraft) {
+    visualAssetHtml = `
+      <div class="diff-visual-card">
+        <div class="diff-visual-toolbar">
+          <div class="diff-visual-info">
+            <span class="badge-pdf-doc">Drafted PDF Document</span>
+            <span class="diff-filename">${escapeHtml(content.file_name || content.title)}</span>
+          </div>
+          <div class="diff-visual-actions">
+            ${pdfUrl ? `<a href="${escapeHtml(pdfUrl)}" target="_blank" rel="noopener noreferrer" class="btn-subtle" style="font-size: 11.5px; padding: 4px 10px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+              <span>Open PDF in New Tab</span>
+              <span>↗</span>
+            </a>` : ""}
+          </div>
+        </div>
+        <div class="diff-pdf-viewport">
+          ${pdfUrl ? `<iframe src="${escapeHtml(pdfUrl)}" class="diff-preview-iframe" title="${escapeHtml(content.title)}"></iframe>` : `<div style="color: var(--muted); padding: 30px;">[PDF Document Attached]</div>`}
+        </div>
+      </div>
+    `;
+  }
+
+  // Multi-version comparison or single baseline version
+  let comparisonHtml = "";
+  if (versions.length >= 2) {
+    const v1Idx = (typeof state.diffCompareV1 === "number" && state.diffCompareV1 < versions.length) ? state.diffCompareV1 : 0;
+    const v2Idx = (typeof state.diffCompareV2 === "number" && state.diffCompareV2 < versions.length) ? state.diffCompareV2 : versions.length - 1;
+
+    const vA = versions[v1Idx];
+    const vB = versions[v2Idx];
+
+    const v1Num = vA ? (vA.number || (v1Idx + 1)) : 1;
+    const v2Num = vB ? (vB.number || (v2Idx + 1)) : 2;
+
+    const textA = vA ? vA.extracted_text : "";
+    const textB = vB ? vB.extracted_text : "";
+
+    const diffResult = computeWordDiff(textA, textB);
+
+    comparisonHtml = `
+      <div class="diff-comparison-container">
+        <div class="diff-active-header">
+          <div class="diff-title-row">
+            <div class="diff-title-info">
+              <span class="recent-draft-version" style="font-size: 12px; background: rgba(99, 102, 241, 0.15); color: #818cf8; padding: 2px 8px; border-radius: 4px;">v${versions.length} Revisions</span>
+              <h3 class="diff-doc-title">${escapeHtml(content.title)}</h3>
+              <span class="status-badge status-${content.status}">${content.status.replace("_", " ")}</span>
+            </div>
+
+            <div class="diff-version-controls">
+              <label style="font-size: 12px; color: var(--muted);">Compare:</label>
+              <select class="diff-version-select" id="diffSelV1" onchange="window.brandlens.changeDiffVersions(this.value, document.getElementById('diffSelV2').value)">
+                ${versions.map((v, idx) => `<option value="${idx}" ${idx === v1Idx ? "selected" : ""}>Version ${v.number || (idx + 1)}${idx === 0 ? " (Baseline)" : ""}</option>`).join("")}
+              </select>
+              <span style="color: var(--faint);">↔</span>
+              <select class="diff-version-select" id="diffSelV2" onchange="window.brandlens.changeDiffVersions(document.getElementById('diffSelV1').value, this.value)">
+                ${versions.map((v, idx) => `<option value="${idx}" ${idx === v2Idx ? "selected" : ""}>Version ${v.number || (idx + 1)}${idx === versions.length - 1 ? " (Latest)" : ""}</option>`).join("")}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="diff-comparison-grid">
+          <div class="diff-column">
+            <div class="diff-col-header">
+              <span class="diff-col-version">Version ${v1Num} (Original Baseline)</span>
+              <span class="diff-del-badge">Deletions Highlighted</span>
+            </div>
+            <div class="diff-col-body">
+              <p>${diffResult.diffA || `<em style="color: var(--faint);">No text in this version</em>`}</p>
+            </div>
+          </div>
+
+          <div class="diff-column">
+            <div class="diff-col-header">
+              <span class="diff-col-version">Version ${v2Num} (Current Revision)</span>
+              <span class="diff-add-badge">Additions Highlighted</span>
+            </div>
+            <div class="diff-col-body">
+              <p>${diffResult.diffB || `<em style="color: var(--faint);">No text in this version</em>`}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  } else {
+    // Single version (Baseline)
+    const baseText = versions.length > 0 ? versions[0].extracted_text : "";
+    const findingsCount = (content.findings || []).length;
+
+    comparisonHtml = `
+      <div class="diff-single-version-card">
+        <div class="diff-single-header">
+          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <span class="diff-version-pill">Version 1 · Initial Baseline Draft</span>
+            <span class="status-badge status-${content.status}">${content.status.replace("_", " ")}</span>
+          </div>
+          <span class="diff-single-status">${findingsCount} brand issues detected in baseline</span>
+        </div>
+
+        <div class="diff-single-body">
+          <div style="font-size: 11px; text-transform: uppercase; color: var(--muted); font-weight: 700; margin-bottom: 8px; letter-spacing: 0.05em;">Draft Extracted Copy</div>
+          <p>${escapeHtml(baseText) || `<em style="color: var(--faint);">Visual image / document asset checked without raw textual body</em>`}</p>
+        </div>
+
+        <div class="diff-single-footer">
+          <span>💡 <strong>Live Revision Diffs:</strong> This draft is at Version 1 (Baseline). When you accept suggestions, edit text, or submit revised copy, comparative diffs highlighting additions and deletions will automatically appear side-by-side here.</span>
+        </div>
+      </div>
+    `;
+  }
 
   elements.diffContainer.innerHTML = `
-    <div class="diff-box">
-      <div class="diff-tag">Revision Comparison (v1 to v${content.versions.length})</div>
-      <p style="margin-bottom: 12px;"><span style="color: #93c5fd; font-weight: 500;">Original:</span> ${escapeHtml(v1)}</p>
-      <hr style="border: 0; border-top: 1px solid var(--border); margin: 12px 0;">
-      <p><span style="color: #86efac; font-weight: 500;">Current:</span> ${escapeHtml(vCurrent)}</p>
+    <div class="diff-view-wrapper">
+      ${recentDraftsHtml}
+      ${visualAssetHtml}
+      ${comparisonHtml}
     </div>
   `;
 }
@@ -1069,6 +1618,58 @@ async function loadInsights() {
   `
     )
     .join("");
+
+  // ── Closed-Loop Learning: Render Proposed Adjustments ──
+  const adjContainer = document.getElementById("adjustmentsList");
+  if (adjContainer) {
+    if (data.pending_adjustments && data.pending_adjustments.length > 0) {
+      adjContainer.innerHTML = data.pending_adjustments.map((adj) => `
+        <div class="unclear-item" style="border-left: 3px solid #60a5fa; padding-left: 12px; margin-bottom: 12px;">
+          <div class="unclear-detail">
+            <div class="unclear-head" style="color: var(--text); font-weight: 600;">
+              Rule: ${escapeHtml(adj.source_id)} <span style="font-size: 11px; color: #60a5fa; font-weight: 500;">(Context: ${escapeHtml(adj.content_type || "all channels")})</span>
+            </div>
+            <div class="unclear-stat" style="color: var(--muted); font-size: 12px; margin-top: 3px;">
+              ${adj.evidence_count} human decisions · ${adj.override_rate_pct}% override rate · Proposing severity: <strong style="color: #f87171;">${adj.original_severity.toUpperCase()}</strong> → <strong style="color: #fbbf24;">${adj.adjusted_severity.toUpperCase()}</strong>
+            </div>
+            <div class="unclear-suggestion" style="font-size: 12px; color: var(--faint); margin-top: 4px;">
+              <strong>Top justification:</strong> "${escapeHtml(adj.top_reasons[0] || 'Domain-specific phrasing accepted')}"
+            </div>
+          </div>
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <button class="btn-card-accept" style="padding: 4px 10px; font-size: 12px;" onclick="window.brandlens.approveAdjustment('${adj.id}')">Approve Adjustment</button>
+            <button class="btn-subtle" style="padding: 4px 10px; font-size: 12px;" onclick="window.brandlens.rejectAdjustment('${adj.id}')">Dismiss</button>
+          </div>
+        </div>
+      `).join("");
+    } else {
+      adjContainer.innerHTML = `<div style="font-size: 13px; color: var(--faint); padding: 8px 0;">No pending severity adjustments. System continuously monitors override patterns.</div>`;
+    }
+  }
+
+  // ── Closed-Loop Learning: Render Guideline Rewrite Suggestions ──
+  const rewriteContainer = document.getElementById("rewriteSuggestionsList");
+  if (rewriteContainer) {
+    if (data.rewrite_suggestions && data.rewrite_suggestions.length > 0) {
+      rewriteContainer.innerHTML = data.rewrite_suggestions.map((sugg) => `
+        <div class="unclear-item" style="border-left: 3px solid #4ade80; padding-left: 12px; margin-bottom: 12px;">
+          <div class="unclear-detail">
+            <div class="unclear-head" style="color: var(--text); font-weight: 600;">${escapeHtml(sugg.source_title)}</div>
+            <div class="unclear-stat" style="font-size: 12px; color: #4ade80; margin-top: 2px;">${escapeHtml(sugg.evidence_summary)}</div>
+            <div style="margin-top: 6px; font-size: 12px; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px; border: 1px solid var(--border); color: var(--text);">
+              <div style="font-weight: 500; font-size: 11px; color: var(--muted); text-transform: uppercase;">Proposed Guideline Amendment</div>
+              <p style="margin-top: 4px; white-space: pre-wrap;">${escapeHtml(sugg.suggested_content)}</p>
+            </div>
+          </div>
+          <div style="display: flex; gap: 6px; align-items: flex-start;">
+            <button class="btn-primary" style="font-size: 12px; padding: 5px 12px;" onclick="window.brandlens.applyRewriteSuggestion('${sugg.id}', '${sugg.source_id}')">Apply Amendment</button>
+          </div>
+        </div>
+      `).join("");
+    } else {
+      rewriteContainer.innerHTML = `<div style="font-size: 13px; color: var(--faint); padding: 8px 0;">No active guideline amendment proposals.</div>`;
+    }
+  }
 }
 
 async function clarifyRule(sourceId) {
@@ -1152,6 +1753,36 @@ function escapeHtml(str) {
     .replace(/'/g, "&#039;");
 }
 
+async function approveAdjustment(adjId) {
+  await api.approveAdjustment(adjId, state.currentUser.id);
+  await loadInsights();
+}
+
+async function rejectAdjustment(adjId) {
+  await api.rejectAdjustment(adjId);
+  await loadInsights();
+}
+
+async function applyRewriteSuggestion(suggId, sourceId) {
+  const source = state.sources.find((s) => s.id === sourceId);
+  const data = state.insights;
+  const sugg = (data.rewrite_suggestions || []).find((s) => s.id === suggId);
+  if (!source || !sugg) return;
+
+  await api.updateSource(sourceId, {
+    type: source.type,
+    title: source.title,
+    section: source.section,
+    effective_date: new Date().toISOString().split("T")[0],
+    owner: source.owner,
+    content: sugg.suggested_content,
+    tags: source.tags,
+  });
+  alert("Guideline amended successfully with the approved contextual exception.");
+  await loadSources();
+  await loadInsights();
+}
+
 // Attach global methods for inline HTML onclick handlers
 window.brandlens = {
   acceptFinding,
@@ -1160,6 +1791,14 @@ window.brandlens = {
   overrideFinding,
   clarifyRule,
   toggleSource,
+  approveAdjustment,
+  rejectAdjustment,
+  applyRewriteSuggestion,
+  selectDraftFromDiff,
+  changeDiffVersions,
+  signInWithGoogle,
+  signOutGoogle,
+  showFirebaseConfigModal,
 };
 
 // Start application

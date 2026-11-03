@@ -25,6 +25,21 @@ export const api = {
     return await res.json();
   },
 
+  // Firebase Google Authentication
+  async syncGoogleUser(authData) {
+    const res = await fetch(`${API_BASE}/api/auth/google`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(authData),
+    });
+    return await res.json();
+  },
+
+  async listAuthUsers() {
+    const res = await fetch(`${API_BASE}/api/auth/users`);
+    return await res.json();
+  },
+
   // Knowledge Base Sources
   async listSources() {
     const res = await fetch(`${API_BASE}/api/sources`);
@@ -109,6 +124,20 @@ export const api = {
     return await res.json();
   },
 
+  async submitNewVersion(contentId, text) {
+    const formData = new FormData();
+    formData.append("text", text);
+    const res = await fetch(`${API_BASE}/api/content/${contentId}/versions`, {
+      method: "POST",
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || "Failed to submit new draft revision");
+    }
+    return await res.json();
+  },
+
   // Finding Actions: Accept, Edit, Dispute, Override
   async actOnFinding(contentId, findingId, actionPayload) {
     const res = await fetch(`${API_BASE}/api/content/${contentId}/findings/${findingId}`, {
@@ -142,6 +171,26 @@ export const api = {
   // Governance Insights
   async getInsights() {
     const res = await fetch(`${API_BASE}/api/insights`);
+    return await res.json();
+  },
+
+  // Closed-Loop Learning & Severity Adjustments
+  async approveAdjustment(adjId, approverId = "usr_brand_mgr") {
+    const res = await fetch(`${API_BASE}/api/insights/adjustments/${adjId}?action=approved&approver_id=${approverId}`, {
+      method: "PATCH"
+    });
+    return await res.json();
+  },
+
+  async rejectAdjustment(adjId) {
+    const res = await fetch(`${API_BASE}/api/insights/adjustments/${adjId}?action=rejected`, {
+      method: "PATCH"
+    });
+    return await res.json();
+  },
+
+  async getRewriteSuggestions() {
+    const res = await fetch(`${API_BASE}/api/insights/rewrite-suggestions`);
     return await res.json();
   },
 

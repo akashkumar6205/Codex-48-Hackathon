@@ -87,10 +87,11 @@ def get_workspace():
     }
 
 # -------------------------------------------------------------
-# Firebase Google Authentication
+# Firebase Authentication
 # -------------------------------------------------------------
+@app.post("/api/auth/user")
 @app.post("/api/auth/google")
-def auth_google(req: GoogleAuthRequest):
+def auth_firebase_user(req: GoogleAuthRequest):
     user_id = req.uid if req.uid.startswith("usr_") else f"usr_{req.uid[:12]}"
     user = User(
         id=user_id,
@@ -103,10 +104,10 @@ def auth_google(req: GoogleAuthRequest):
     store.users[user_id] = user
     store.log_audit(
         actor_id=user_id,
-        action="google_sign_in",
+        action="firebase_sign_in",
         entity="user",
         entity_id=user_id,
-        metadata={"email": req.email, "name": user.name, "provider": "firebase_google"}
+        metadata={"email": req.email, "name": user.name, "provider": "firebase_auth"}
     )
     return {
         "status": "authenticated",

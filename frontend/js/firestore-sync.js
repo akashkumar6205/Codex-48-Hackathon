@@ -578,3 +578,4 @@ export async function fsGetInsights() {
     rewrite_suggestions: [],
   };
 }
+

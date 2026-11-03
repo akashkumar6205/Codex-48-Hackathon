@@ -67,12 +67,15 @@ export const api = {
   },
 
   // Firebase User Sync
-  async syncGoogleUser(authData) {
-    return await safeFetch(`${API_BASE}/api/auth/google`, {
+  async syncAuthUser(authData) {
+    return await safeFetch(`${API_BASE}/api/auth/user`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(authData),
     }, () => ({ ok: true, user: authData }));
+  },
+  async syncGoogleUser(authData) {
+    return await this.syncAuthUser(authData);
   },
 
   async listAuthUsers() {

@@ -7,7 +7,6 @@
  * 1. Email/Password Authentication (Sign In & Sign Up)
  * 2. Role-based user profile creation in Firestore
  * 3. Firestore database storage for drafts, finding resolutions, and guidelines
- * 4. Google OAuth popup fallback
  */
 
 const STORAGE_CONFIG_KEY = "brandlens_firebase_config";
@@ -275,62 +274,6 @@ export async function loadContentFromFirestore() {
     console.warn("Firestore load drafts notice:", err);
     return [];
   }
-}
-
-// Sign In With Google (OAuth Popup)
-export async function signInWithGoogle() {
-  await ensureSdkReady();
-
-  if (firebaseAuth) {
-    try {
-      const { GoogleAuthProvider, signInWithPopup } = await import("https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js");
-      const { doc, getDoc, setDoc } = await import("https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js");
-
-      const provider = new GoogleAuthProvider();
-      provider.addScope("profile");
-      provider.addScope("email");
-
-      const result = await signInWithPopup(firebaseAuth, provider);
-      const user = result.user;
-
-      let role = "creator";
-      try {
-        const uSnap = await getDoc(doc(firestoreDb, "users", user.uid));
-        if (uSnap.exists()) {
-          role = uSnap.data().role || "creator";
-        } else {
-          await setDoc(doc(firestoreDb, "users", user.uid), {
-            email: user.email,
-            displayName: user.displayName || formatNameFromEmail(user.email),
-            role: "creator",
-            createdAt: Date.now()
-          });
-        }
-      } catch (_) {}
-
-      currentUser = {
-        uid: user.uid,
-        name: user.displayName || formatNameFromEmail(user.email),
-        email: user.email,
-        photoUrl: user.photoURL || null,
-        role: role,
-        provider: "google",
-        accessToken: await user.getIdToken()
-      };
-
-      localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(currentUser));
-      if (authListenerCallback) authListenerCallback(currentUser);
-      closeFirebaseConfigModal();
-      return currentUser;
-    } catch (popupErr) {
-      console.warn("Google popup error:", popupErr.code, popupErr.message);
-      showFirebaseConfigModal(popupErr.message);
-      return null;
-    }
-  }
-
-  showFirebaseConfigModal();
-  return null;
 }
 
 // Sign Out

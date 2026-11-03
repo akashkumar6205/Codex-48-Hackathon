@@ -4,12 +4,11 @@
  * Zero TypeScript, Zero Next.js
  */
 
-import { api } from "./api.js?v=20261103_4";
+import { api } from "./api.js?v=20261103_5";
 import {
   initFirebaseAuth,
   signInWithEmailPassword,
   signUpWithEmailPassword,
-  signInWithGoogle,
   signOutFirebase,
   showFirebaseConfigModal,
   closeFirebaseConfigModal,
@@ -17,7 +16,7 @@ import {
   saveContentToFirestore,
   loadContentFromFirestore,
   getFirebaseConfig
-} from "./firebase-auth.js?v=20261103_4";
+} from "./firebase-auth.js?v=20261103_5";
 
 // Application State
 const state = {
@@ -168,7 +167,6 @@ const elements = {
   loginUserRole: document.getElementById("loginUserRole"),
   btnSubmitFirebaseAuth: document.getElementById("btnSubmitFirebaseAuth"),
   btnSubmitFirebaseAuthText: document.getElementById("btnSubmitFirebaseAuthText"),
-  btnAuthGooglePopup: document.getElementById("btnAuthGooglePopup"),
   btnCloseFirebaseModal: document.getElementById("btnCloseFirebaseModal"),
   fbAuthNotice: document.getElementById("fbAuthNotice"),
 };
@@ -195,8 +193,8 @@ function handleAuthChange(user) {
       elements.userAvatarImg.style.display = "block";
       if (elements.userAvatarFallback) elements.userAvatarFallback.style.display = "none";
     } else if (elements.userAvatarFallback) {
-      const initials = (user.name || user.email || "G").split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
-      elements.userAvatarFallback.textContent = initials || "G";
+      const initials = (user.name || user.email || "U").split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
+      elements.userAvatarFallback.textContent = initials || "U";
       elements.userAvatarFallback.style.display = "inline";
       if (elements.userAvatarImg) elements.userAvatarImg.style.display = "none";
     }
@@ -215,15 +213,15 @@ function handleAuthChange(user) {
     if (elements.currentUserName) elements.currentUserName.textContent = `${user.name} (${user.email})`;
     if (elements.txtAuthAccountInfo) elements.txtAuthAccountInfo.textContent = `Signed in as ${user.name} (${user.email}) [Role: ${state.currentRole.toUpperCase()}]`;
     if (elements.fbStatusBadge) {
-      elements.fbStatusBadge.textContent = "Active (Google Auth)";
+      elements.fbStatusBadge.textContent = "Active (Firebase Auth)";
       elements.fbStatusBadge.className = "status-badge status-approved";
     }
 
     // Sync user with backend session & audit log safely
-    const syncFn = (api && typeof api.syncGoogleUser === "function")
-      ? api.syncGoogleUser
-      : (typeof window !== "undefined" && window.api && typeof window.api.syncGoogleUser === "function")
-        ? window.api.syncGoogleUser
+    const syncFn = (api && typeof api.syncAuthUser === "function")
+      ? api.syncAuthUser
+      : (api && typeof api.syncGoogleUser === "function")
+        ? api.syncGoogleUser
         : null;
     if (syncFn) {
       syncFn({
@@ -232,7 +230,7 @@ function handleAuthChange(user) {
         name: user.name,
         photo_url: user.photoUrl,
         role: state.currentRole,
-      }).catch((err) => console.warn("Google auth sync notice:", err));
+      }).catch((err) => console.warn("Firebase auth sync notice:", err));
     }
 
   } else {
@@ -309,15 +307,6 @@ function setupEventListeners() {
           elements.btnSubmitFirebaseAuthText.textContent = authMode === "signup" ? "Create Account" : "Sign In";
         }
       }
-    }
-  });
-
-  // Native Firebase OAuth Popup
-  elements.btnAuthGooglePopup?.addEventListener("click", async () => {
-    try {
-      await signInWithGoogle();
-    } catch (err) {
-      alert("Google Sign-In notice: " + (err.message || err));
     }
   });
 
@@ -1853,7 +1842,6 @@ window.brandlens = {
   applyRewriteSuggestion,
   selectDraftFromDiff,
   changeDiffVersions,
-  signInWithGoogle,
   signOutFirebase,
   showFirebaseConfigModal,
 };

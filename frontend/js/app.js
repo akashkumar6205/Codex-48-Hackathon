@@ -4,19 +4,17 @@
  * Zero TypeScript, Zero Next.js
  */
 
-import { api } from "./api.js?v=20261103_5";
+import { api } from "./api.js?v=20261103_3";
 import {
   initFirebaseAuth,
-  signInWithEmailPassword,
-  signUpWithEmailPassword,
-  signOutFirebase,
+  signInWithGoogle,
+  signOutGoogle,
   showFirebaseConfigModal,
   closeFirebaseConfigModal,
   saveFirebaseConfig,
-  saveContentToFirestore,
-  loadContentFromFirestore,
+  loginWithGoogleEmail,
   getFirebaseConfig
-} from "./firebase-auth.js?v=20261103_5";
+} from "./firebase-auth.js?v=20261103_3";
 
 // Application State
 const state = {
@@ -146,7 +144,7 @@ const elements = {
   modalOcrTextSection: document.getElementById("modalOcrTextSection"),
   modalOcrTextarea: document.getElementById("modalOcrTextarea"),
 
-  // Firebase Auth Elements
+  // Firebase Google Auth Elements
   btnGoogleSignIn: document.getElementById("btnGoogleSignIn"),
   userProfilePill: document.getElementById("userProfilePill"),
   userAvatarImg: document.getElementById("userAvatarImg"),
@@ -157,18 +155,17 @@ const elements = {
   btnSettingsGoogleAuth: document.getElementById("btnSettingsGoogleAuth"),
   txtAuthAccountInfo: document.getElementById("txtAuthAccountInfo"),
   fbStatusBadge: document.getElementById("fbStatusBadge"),
-  tabFbSignIn: document.getElementById("tabFbSignIn"),
-  tabFbSignUp: document.getElementById("tabFbSignUp"),
-  firebaseAuthForm: document.getElementById("firebaseAuthForm"),
-  wrapFbDisplayName: document.getElementById("wrapFbDisplayName"),
-  loginFirebaseName: document.getElementById("loginFirebaseName"),
-  loginFirebaseEmail: document.getElementById("loginFirebaseEmail"),
-  loginFirebasePassword: document.getElementById("loginFirebasePassword"),
+  googleEmailLoginForm: document.getElementById("googleEmailLoginForm"),
+  loginGoogleEmail: document.getElementById("loginGoogleEmail"),
   loginUserRole: document.getElementById("loginUserRole"),
-  btnSubmitFirebaseAuth: document.getElementById("btnSubmitFirebaseAuth"),
-  btnSubmitFirebaseAuthText: document.getElementById("btnSubmitFirebaseAuthText"),
+  btnSubmitGoogleEmail: document.getElementById("btnSubmitGoogleEmail"),
+  btnLaunchFirebasePopup: document.getElementById("btnLaunchFirebasePopup"),
+  btnSaveFirebaseConfig: document.getElementById("btnSaveFirebaseConfig"),
   btnCloseFirebaseModal: document.getElementById("btnCloseFirebaseModal"),
-  fbAuthNotice: document.getElementById("fbAuthNotice"),
+  fbApiKeyInput: document.getElementById("fbApiKeyInput"),
+  fbAuthDomainInput: document.getElementById("fbAuthDomainInput"),
+  fbProjectIdInput: document.getElementById("fbProjectIdInput"),
+  fbAppIdInput: document.getElementById("fbAppIdInput"),
 };
 
 let activeModalCallback = null;
@@ -193,8 +190,8 @@ function handleAuthChange(user) {
       elements.userAvatarImg.style.display = "block";
       if (elements.userAvatarFallback) elements.userAvatarFallback.style.display = "none";
     } else if (elements.userAvatarFallback) {
-      const initials = (user.name || user.email || "U").split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
-      elements.userAvatarFallback.textContent = initials || "U";
+      const initials = (user.name || user.email || "G").split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
+      elements.userAvatarFallback.textContent = initials || "G";
       elements.userAvatarFallback.style.display = "inline";
       if (elements.userAvatarImg) elements.userAvatarImg.style.display = "none";
     }
@@ -213,15 +210,15 @@ function handleAuthChange(user) {
     if (elements.currentUserName) elements.currentUserName.textContent = `${user.name} (${user.email})`;
     if (elements.txtAuthAccountInfo) elements.txtAuthAccountInfo.textContent = `Signed in as ${user.name} (${user.email}) [Role: ${state.currentRole.toUpperCase()}]`;
     if (elements.fbStatusBadge) {
-      elements.fbStatusBadge.textContent = "Active (Firebase Auth)";
+      elements.fbStatusBadge.textContent = "Active (Google Auth)";
       elements.fbStatusBadge.className = "status-badge status-approved";
     }
 
     // Sync user with backend session & audit log safely
-    const syncFn = (api && typeof api.syncAuthUser === "function")
-      ? api.syncAuthUser
-      : (api && typeof api.syncGoogleUser === "function")
-        ? api.syncGoogleUser
+    const syncFn = (api && typeof api.syncGoogleUser === "function")
+      ? api.syncGoogleUser
+      : (typeof window !== "undefined" && window.api && typeof window.api.syncGoogleUser === "function")
+        ? window.api.syncGoogleUser
         : null;
     if (syncFn) {
       syncFn({
@@ -230,7 +227,7 @@ function handleAuthChange(user) {
         name: user.name,
         photo_url: user.photoUrl,
         role: state.currentRole,
-      }).catch((err) => console.warn("Firebase auth sync notice:", err));
+      }).catch((err) => console.warn("Google auth sync notice:", err));
     }
 
   } else {
@@ -248,75 +245,49 @@ function handleAuthChange(user) {
 }
 
 function setupEventListeners() {
-  let authMode = "signin";
-
-  // Tab switching: Sign In vs Sign Up
-  elements.tabFbSignIn?.addEventListener("click", () => {
-    authMode = "signin";
-    elements.tabFbSignIn.classList.add("active");
-    elements.tabFbSignUp.classList.remove("active");
-    if (elements.wrapFbDisplayName) elements.wrapFbDisplayName.style.display = "none";
-    if (elements.btnSubmitFirebaseAuthText) elements.btnSubmitFirebaseAuthText.textContent = "Sign In";
-    if (elements.fbAuthNotice) elements.fbAuthNotice.style.display = "none";
-  });
-
-  elements.tabFbSignUp?.addEventListener("click", () => {
-    authMode = "signup";
-    elements.tabFbSignUp.classList.add("active");
-    elements.tabFbSignIn.classList.remove("active");
-    if (elements.wrapFbDisplayName) elements.wrapFbDisplayName.style.display = "block";
-    if (elements.btnSubmitFirebaseAuthText) elements.btnSubmitFirebaseAuthText.textContent = "Create Account";
-    if (elements.fbAuthNotice) elements.fbAuthNotice.style.display = "none";
-  });
-
-  // Firebase Auth Form submit (Email/Password)
-  elements.firebaseAuthForm?.addEventListener("submit", async (e) => {
+  // Google Email Login form submit
+  elements.googleEmailLoginForm?.addEventListener("submit", (e) => {
     e.preventDefault();
-    const email = elements.loginFirebaseEmail?.value.trim();
-    const password = elements.loginFirebasePassword?.value;
-    const displayName = elements.loginFirebaseName?.value.trim();
-    const role = elements.loginUserRole?.value || state.currentRole || "creator";
-
-    if (!email || !password) {
-      alert("Please provide both email and password.");
+    const email = elements.loginGoogleEmail?.value.trim();
+    const role = elements.loginUserRole?.value || "creator";
+    if (!email) {
+      alert("Please enter a valid Google email address.");
       return;
     }
-
-    if (elements.btnSubmitFirebaseAuth) {
-      elements.btnSubmitFirebaseAuth.disabled = true;
-      if (elements.btnSubmitFirebaseAuthText) elements.btnSubmitFirebaseAuthText.textContent = "Authenticating...";
-    }
-
     try {
-      if (authMode === "signup") {
-        await signUpWithEmailPassword(email, password, displayName, role);
-      } else {
-        await signInWithEmailPassword(email, password);
-      }
+      loginWithGoogleEmail(email, role);
+      closeFirebaseConfigModal();
     } catch (err) {
-      if (elements.fbAuthNotice) {
-        elements.fbAuthNotice.textContent = err.message || "Authentication error";
-        elements.fbAuthNotice.style.display = "block";
-      } else {
-        alert("Authentication failed: " + (err.message || err));
-      }
-    } finally {
-      if (elements.btnSubmitFirebaseAuth) {
-        elements.btnSubmitFirebaseAuth.disabled = false;
-        if (elements.btnSubmitFirebaseAuthText) {
-          elements.btnSubmitFirebaseAuthText.textContent = authMode === "signup" ? "Create Account" : "Sign In";
-        }
-      }
+      alert(err.message || "Failed to sign in with Google email.");
     }
   });
 
-  // Firebase Sign In button in header
-  elements.btnGoogleSignIn?.addEventListener("click", () => {
+  // Native Firebase OAuth Popup test
+  elements.btnLaunchFirebasePopup?.addEventListener("click", async () => {
+    try {
+      await signInWithGoogle();
+      closeFirebaseConfigModal();
+    } catch (err) {
+      alert("Firebase OAuth Notice: " + (err.message || err));
+    }
+  });
+
+  // Firebase Google Sign In button in header
+  elements.btnGoogleSignIn?.addEventListener("click", async () => {
+    const config = getFirebaseConfig();
+    if (config && config.apiKey && config.apiKey.startsWith("AIzaSy") && config.apiKey.length > 20) {
+      try {
+        const u = await signInWithGoogle();
+        if (u) return;
+      } catch (e) {
+        console.warn("Popup attempt error:", e);
+      }
+    }
     showFirebaseConfigModal();
   });
 
   elements.btnSignOut?.addEventListener("click", async () => {
-    await signOutFirebase();
+    await signOutGoogle();
   });
 
   elements.btnSettingsGoogleAuth?.addEventListener("click", () => {
@@ -325,6 +296,17 @@ function setupEventListeners() {
 
   elements.btnCloseFirebaseModal?.addEventListener("click", () => {
     closeFirebaseConfigModal();
+  });
+
+  elements.btnSaveFirebaseConfig?.addEventListener("click", () => {
+    const config = {
+      apiKey: elements.fbApiKeyInput?.value.trim() || "",
+      authDomain: elements.fbAuthDomainInput?.value.trim() || "",
+      projectId: elements.fbProjectIdInput?.value.trim() || "",
+      appId: elements.fbAppIdInput?.value.trim() || "",
+    };
+    saveFirebaseConfig(config);
+    alert("Firebase project configuration saved successfully!");
   });
 
   // Role selector
@@ -707,7 +689,6 @@ function setupEventListeners() {
       elements.btnSubmitNewDraft.textContent = "Extracting & Checking...";
       try {
         const created = await api.uploadDocument(formData);
-        if (created && created.id) saveContentToFirestore(created);
         elements.newDraftModal.classList.remove("active");
         elements.draftFileInput.value = "";
         if (elements.modalImagePreviewContainer) elements.modalImagePreviewContainer.style.display = "none";
@@ -735,7 +716,6 @@ function setupEventListeners() {
         creator_id: state.currentUser.id,
         creator_name: state.currentUser.name,
       });
-      if (created && created.id) saveContentToFirestore(created);
       elements.newDraftModal.classList.remove("active");
       elements.draftTextInput.value = "";
       elements.btnSubmitNewDraft.disabled = false;
@@ -1842,7 +1822,8 @@ window.brandlens = {
   applyRewriteSuggestion,
   selectDraftFromDiff,
   changeDiffVersions,
-  signOutFirebase,
+  signInWithGoogle,
+  signOutGoogle,
   showFirebaseConfigModal,
 };
 

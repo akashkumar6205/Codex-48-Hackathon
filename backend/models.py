@@ -246,12 +246,10 @@ class SettingsUpdateRequest(BaseModel):
     rules_only_mode: Optional[bool] = None
     ai_provider: Optional[str] = None
 
-class FirebaseAuthRequest(BaseModel):
+class GoogleAuthRequest(BaseModel):
     id_token: Optional[str] = None
     uid: str
     email: str
     name: Optional[str] = None
     photo_url: Optional[str] = None
     role: Optional[UserRole] = "creator"
-
-GoogleAuthRequest = FirebaseAuthRequest

@@ -22,7 +22,7 @@ class DataStore:
             )
         )
         
-        # 4 Core Roles (Default roles - users authenticate with their email & password)
+        # 4 Core Roles (Default roles - users authenticate with their Google email)
         self.users: Dict[str, User] = {
             "usr_creator": User(id="usr_creator", name="Creator", email="creator@brandlens.ai", role="creator"),
             "usr_reviewer": User(id="usr_reviewer", name="Reviewer", email="reviewer@brandlens.ai", role="reviewer"),

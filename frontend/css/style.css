@@ -260,24 +260,25 @@ button, input, select, textarea {
 .btn-google-signin {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text);
-  border: 1px solid var(--border);
-  padding: 6px 14px;
-  border-radius: var(--radius-sm);
+  gap: 8px;
+  background: #ffffff;
+  color: #1f2937;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 5px 12px;
+  border-radius: 20px;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
   transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
   white-space: nowrap;
 }
 
 .btn-auth-signin:hover,
 .btn-google-signin:hover {
-  background: rgba(255, 255, 255, 0.14);
-  border-color: rgba(255, 255, 255, 0.25);
-  color: #ffffff;
+  background: #f8fafc;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  transform: translateY(-1px);
 }
 
 .user-profile-pill {

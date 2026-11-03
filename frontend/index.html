@@ -500,89 +500,79 @@
     </div>
   </div>
 
-  <!-- Firebase Google Authentication Modal -->
+  <!-- Firebase Email/Password & Google Authentication Modal -->
   <div class="modal-backdrop" id="firebaseConfigModal">
-    <div class="modal-window" style="max-width: 500px;">
-      <div style="display: flex; align-items: center; gap: 10px;">
-        <svg width="22" height="22" viewBox="0 0 24 24">
-          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-        </svg>
-        <h3 class="modal-heading" style="margin: 0;">Sign in with Google</h3>
+    <div class="modal-window" style="max-width: 480px;">
+      <div style="display: flex; align-items: center; justify-content: space-between;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <path d="M4 18L7 3L11 9L8.5 14L4 18Z" fill="#FFA000"/>
+            <path d="M11 9L14 3L20 18L11 9Z" fill="#F57C00"/>
+            <path d="M4 18L12 22L20 18L11 9L4 18Z" fill="#FFCA28"/>
+          </svg>
+          <h3 class="modal-heading" style="margin: 0;">Firebase Authentication</h3>
+        </div>
+        <span class="badge-role" style="background: rgba(245, 124, 0, 0.15); color: #fbbf24; border: 1px solid rgba(245, 124, 0, 0.3); font-size: 11px;">codex-48</span>
       </div>
 
-      <p style="font-size: 13px; color: var(--muted); line-height: 1.5; margin-top: 2px;">
-        Sign in with your Google email. Your role permissions (Creator, Reviewer, Brand Manager, or Admin) and audit logs will be tied to your corporate Google identity.
+      <p style="font-size: 12.5px; color: var(--muted); line-height: 1.5; margin-top: 4px; margin-bottom: 12px;">
+        Sign in to your corporate governance account using Firebase Email &amp; Password. Your documents and audit logs sync directly to Firestore.
       </p>
 
-      <!-- Google Email Login Form -->
-      <form id="googleEmailLoginForm" style="display: flex; flex-direction: column; gap: 12px; margin-top: 8px;">
-        <div class="modal-field">
-          <label for="loginGoogleEmail" class="modal-label">Your Google Email Address</label>
-          <input type="email" class="modal-text-input" id="loginGoogleEmail" required autocomplete="email">
+      <div id="fbAuthNotice" style="display: none; padding: 8px 12px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px; font-size: 12px; color: #fca5a5; margin-bottom: 12px;"></div>
+
+      <!-- Mode Switcher: Sign In vs Sign Up -->
+      <div class="input-mode-tabs" style="margin-bottom: 12px;">
+        <button type="button" class="mode-btn active" id="tabFbSignIn">Sign In</button>
+        <button type="button" class="mode-btn" id="tabFbSignUp">Create Account</button>
+      </div>
+
+      <!-- Firebase Email/Password Form -->
+      <form id="firebaseAuthForm" style="display: flex; flex-direction: column; gap: 12px;">
+        <div class="modal-field" id="wrapFbDisplayName" style="display: none;">
+          <label for="loginFirebaseName" class="modal-label">Full Name</label>
+          <input type="text" class="modal-text-input" id="loginFirebaseName" placeholder="e.g. Alex Morgan">
         </div>
 
         <div class="modal-field">
-          <label for="loginUserRole" class="modal-label">Select Your Role</label>
+          <label for="loginFirebaseEmail" class="modal-label">Email Address</label>
+          <input type="email" class="modal-text-input" id="loginFirebaseEmail" required autocomplete="email" placeholder="name@company.com">
+        </div>
+
+        <div class="modal-field">
+          <label for="loginFirebasePassword" class="modal-label">Password</label>
+          <input type="password" class="modal-text-input" id="loginFirebasePassword" required autocomplete="current-password" placeholder="At least 6 characters">
+        </div>
+
+        <div class="modal-field">
+          <label for="loginUserRole" class="modal-label">Workspace Role</label>
           <select class="clean-select" id="loginUserRole" style="width: 100%;">
-            <option value="creator">Creator (Submit &amp; author content)</option>
+            <option value="creator">Creator (Submit &amp; author drafts)</option>
             <option value="reviewer">Reviewer (Audit, review &amp; approve)</option>
             <option value="brand_manager">Brand Manager (Brand policies &amp; governance)</option>
-            <option value="admin">Admin (System settings &amp; audit oversight)</option>
+            <option value="admin">Admin (System settings &amp; oversight)</option>
           </select>
         </div>
 
-        <button type="submit" class="btn-primary" id="btnSubmitGoogleEmail" style="justify-content: center; padding: 10px 16px; margin-top: 4px;">
+        <button type="submit" class="btn-primary" id="btnSubmitFirebaseAuth" style="justify-content: center; padding: 10px 16px; margin-top: 4px;">
+          <span id="btnSubmitFirebaseAuthText">Sign In</span>
+        </button>
+
+        <div style="text-align: center; margin: 4px 0; color: var(--faint); font-size: 11px;">OR</div>
+
+        <button type="button" class="btn-subtle" id="btnAuthGooglePopup" style="justify-content: center; padding: 8px 14px; gap: 8px;">
           <svg class="google-icon" width="16" height="16" viewBox="0 0 24 24">
-            <path fill="#ffffff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-            <path fill="#ffffff" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-            <path fill="#ffffff" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-            <path fill="#ffffff" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
           </svg>
-          <span>Sign In with Google</span>
+          <span>Continue with Google</span>
         </button>
       </form>
 
-      <!-- Advanced Firebase Web App Config (Collapsible) -->
-      <div style="margin-top: 10px; border-top: 1px solid var(--border); padding-top: 12px;">
-        <details id="fbProjectKeysDetails">
-          <summary style="font-size: 12px; color: var(--muted); cursor: pointer; font-weight: 500;">
-            ⚙️ Optional: Connect Firebase Project Keys (OAuth Popup)
-          </summary>
-          <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 12px;">
-            <p style="font-size: 11.5px; color: var(--faint); line-height: 1.5;">
-              To trigger the native Google OAuth popup window, enter your Firebase Console web project keys:
-            </p>
-            <div class="modal-field">
-              <label for="fbApiKeyInput" class="modal-label">apiKey</label>
-              <input type="text" class="modal-text-input" id="fbApiKeyInput" placeholder="AIzaSy...">
-            </div>
-            <div class="modal-field">
-              <label for="fbAuthDomainInput" class="modal-label">authDomain</label>
-              <input type="text" class="modal-text-input" id="fbAuthDomainInput" placeholder="your-app.firebaseapp.com">
-            </div>
-            <div class="grid-2">
-              <div class="modal-field">
-                <label for="fbProjectIdInput" class="modal-label">projectId</label>
-                <input type="text" class="modal-text-input" id="fbProjectIdInput" placeholder="your-project-id">
-              </div>
-              <div class="modal-field">
-                <label for="fbAppIdInput" class="modal-label">appId</label>
-                <input type="text" class="modal-text-input" id="fbAppIdInput" placeholder="1:123456:web:...">
-              </div>
-            </div>
-            <div style="display: flex; gap: 8px;">
-              <button type="button" class="btn-subtle" id="btnSaveFirebaseConfig" style="font-size: 12px;">Save Keys</button>
-              <button type="button" class="btn-subtle" id="btnLaunchFirebasePopup" style="font-size: 12px;">Test OAuth Popup</button>
-            </div>
-          </div>
-        </details>
-      </div>
-
-      <div class="modal-actions" style="margin-top: 8px;">
-        <button class="btn-subtle" id="btnCloseFirebaseModal">Cancel</button>
+      <div class="modal-actions" style="margin-top: 12px;">
+        <button type="button" class="btn-subtle" id="btnCloseFirebaseModal">Cancel</button>
       </div>
     </div>
   </div>

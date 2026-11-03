@@ -4,17 +4,20 @@
  * Zero TypeScript, Zero Next.js
  */
 
-import { api } from "./api.js?v=20261103_3";
+import { api } from "./api.js?v=20261103_4";
 import {
   initFirebaseAuth,
+  signInWithEmailPassword,
+  signUpWithEmailPassword,
   signInWithGoogle,
-  signOutGoogle,
+  signOutFirebase,
   showFirebaseConfigModal,
   closeFirebaseConfigModal,
   saveFirebaseConfig,
-  loginWithGoogleEmail,
+  saveContentToFirestore,
+  loadContentFromFirestore,
   getFirebaseConfig
-} from "./firebase-auth.js?v=20261103_3";
+} from "./firebase-auth.js?v=20261103_4";
 
 // Application State
 const state = {
@@ -144,7 +147,7 @@ const elements = {
   modalOcrTextSection: document.getElementById("modalOcrTextSection"),
   modalOcrTextarea: document.getElementById("modalOcrTextarea"),
 
-  // Firebase Google Auth Elements
+  // Firebase Auth Elements
   btnGoogleSignIn: document.getElementById("btnGoogleSignIn"),
   userProfilePill: document.getElementById("userProfilePill"),
   userAvatarImg: document.getElementById("userAvatarImg"),
@@ -155,17 +158,19 @@ const elements = {
   btnSettingsGoogleAuth: document.getElementById("btnSettingsGoogleAuth"),
   txtAuthAccountInfo: document.getElementById("txtAuthAccountInfo"),
   fbStatusBadge: document.getElementById("fbStatusBadge"),
-  googleEmailLoginForm: document.getElementById("googleEmailLoginForm"),
-  loginGoogleEmail: document.getElementById("loginGoogleEmail"),
+  tabFbSignIn: document.getElementById("tabFbSignIn"),
+  tabFbSignUp: document.getElementById("tabFbSignUp"),
+  firebaseAuthForm: document.getElementById("firebaseAuthForm"),
+  wrapFbDisplayName: document.getElementById("wrapFbDisplayName"),
+  loginFirebaseName: document.getElementById("loginFirebaseName"),
+  loginFirebaseEmail: document.getElementById("loginFirebaseEmail"),
+  loginFirebasePassword: document.getElementById("loginFirebasePassword"),
   loginUserRole: document.getElementById("loginUserRole"),
-  btnSubmitGoogleEmail: document.getElementById("btnSubmitGoogleEmail"),
-  btnLaunchFirebasePopup: document.getElementById("btnLaunchFirebasePopup"),
-  btnSaveFirebaseConfig: document.getElementById("btnSaveFirebaseConfig"),
+  btnSubmitFirebaseAuth: document.getElementById("btnSubmitFirebaseAuth"),
+  btnSubmitFirebaseAuthText: document.getElementById("btnSubmitFirebaseAuthText"),
+  btnAuthGooglePopup: document.getElementById("btnAuthGooglePopup"),
   btnCloseFirebaseModal: document.getElementById("btnCloseFirebaseModal"),
-  fbApiKeyInput: document.getElementById("fbApiKeyInput"),
-  fbAuthDomainInput: document.getElementById("fbAuthDomainInput"),
-  fbProjectIdInput: document.getElementById("fbProjectIdInput"),
-  fbAppIdInput: document.getElementById("fbAppIdInput"),
+  fbAuthNotice: document.getElementById("fbAuthNotice"),
 };
 
 let activeModalCallback = null;

@@ -12,47 +12,37 @@ import uuid
 from typing import List, Dict, Tuple, Optional
 from backend.models import Finding, FindingSource, TextExcerpt, Source
 from backend.storage import store
+from backend.rag_engine import rag_engine
+from backend.visual_analyzer import visual_analyzer
+from backend.severity_tuner import severity_tuner
 
 class ReviewEngine:
     def __init__(self):
         pass
 
-    def run_check(self, text: str, content_type: str = "web", channel: str = "", is_image: bool = False) -> List[Finding]:
+    def run_check(
+        self,
+        text: str,
+        content_type: str = "web",
+        channel: str = "",
+        is_image: bool = False,
+        image_path: Optional[str] = None
+    ) -> List[Finding]:
         findings: List[Finding] = []
         run_id = f"run_{uuid.uuid4().hex[:8]}"
 
         active_sources = {s.id: s for s in store.sources.values() if s.status == "active"}
         is_rules_only = store.workspace.settings.rules_only_mode
 
-        # Check visual and accessibility guidelines for image assets (PRD CS-4 & RE-2)
+        # ── 1. VISUAL BRAND COMPLIANCE & ACCESSIBILITY (Phase 2) ──
         if is_image:
-            acc_sources = [s for s in active_sources.values() if s.id == "accessibility-01" or s.type == "asset-rule" or "accessibility" in s.title.lower()]
-            if acc_sources:
-                acc_src = acc_sources[0]
-                excerpt_str = (text[:40] if text and text.strip() else "Scanned Visual Asset").strip()
-                findings.append(Finding(
-                    id=f"f_{uuid.uuid4().hex[:8]}",
-                    run_id=run_id,
-                    category="accessibility",
-                    severity="medium",
-                    confidence=0.96,
-                    excerpt=TextExcerpt(
-                        text=excerpt_str,
-                        start=0,
-                        end=len(excerpt_str)
-                    ),
-                    reason="Visual assets require verified alternative text (alt-text) and WCAG 2.1 AA digital accessibility compliance.",
-                    sources=[
-                        FindingSource(
-                            source_id=acc_src.id,
-                            title=acc_src.title,
-                            section=acc_src.section,
-                            quote="All digital customer communications must follow WCAG 2.1 AA standards. Ensure high text contrast ratios, meaningful alternative text, and unambiguous call-to-action link labels."
-                        )
-                    ],
-                    suggestion="Add descriptive alternative text (alt-text) and confirm high contrast readability before publication.",
-                    status="open"
-                ))
+            visual_findings = visual_analyzer.analyze_image(
+                image_path=image_path or "",
+                ocr_text=text,
+                active_sources=active_sources,
+                run_id=run_id
+            )
+            findings.extend(visual_findings)
 
         if not text or not text.strip():
             return findings
@@ -219,13 +209,30 @@ class ReviewEngine:
                 ))
 
         # -----------------------------------------------------------------
+        # 3.5. GROUNDED RAG CHECKS (Phase 1)
+        # Evaluates semantic nuances beyond literal regex keywords, grounded in active sources
+        # -----------------------------------------------------------------
+        if not is_rules_only and text and text.strip():
+            llm_findings, dropped_count = rag_engine.run_llm_check(
+                text, content_type, channel, active_sources, run_id
+            )
+            findings.extend(llm_findings)
+
+        # -----------------------------------------------------------------
         # 4. RE-5 VALIDATION (Zero-Hallucination Invariant)
         # Drop any finding that lacks an active, verifiable source citation
+        # Deduplicate overlapping character spans (preferring longer/more specific phrases)
         # -----------------------------------------------------------------
         valid_findings = []
-        seen_ranges = set()
+        seen_ranges = []
 
-        for f in findings:
+        # Sort so longer excerpts are considered first, then by start position
+        sorted_findings = sorted(
+            findings,
+            key=lambda x: (x.excerpt.start, -(x.excerpt.end - x.excerpt.start))
+        )
+
+        for f in sorted_findings:
             if not f.sources or len(f.sources) == 0:
                 continue
 
@@ -233,15 +240,21 @@ class ReviewEngine:
             if any(s.source_id not in active_sources for s in f.sources):
                 continue
 
-            # Deduplicate exact overlapping ranges
-            pos_key = (f.excerpt.start, f.excerpt.end)
-            if pos_key in seen_ranges:
+            # Deduplicate overlapping spans
+            overlaps = False
+            for s_start, s_end in seen_ranges:
+                if max(f.excerpt.start, s_start) < min(f.excerpt.end, s_end):
+                    overlaps = True
+                    break
+            if overlaps:
                 continue
-            seen_ranges.add(pos_key)
 
+            seen_ranges.append((f.excerpt.start, f.excerpt.end))
             valid_findings.append(f)
 
         valid_findings.sort(key=lambda x: x.excerpt.start)
+        # ── 5. CLOSED-LOOP CONTEXTUAL SEVERITY TUNING (Phase 3) ──
+        valid_findings = severity_tuner.adjust(valid_findings, content_type, channel)
         return valid_findings
 
     def _check_term_replacement(self, text: str, search_term: str, replacement: str, src: Source, run_id: str, findings: List[Finding], category: str, severity: str, reason: str):

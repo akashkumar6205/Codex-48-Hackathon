@@ -51,6 +51,28 @@ class Source(BaseModel):
     content: str
     tags: List[str] = Field(default_factory=list)
 
+class SourceChunk(BaseModel):
+    """A semantic chunk of a Source, with its embedding vector."""
+    id: str = Field(default_factory=lambda: f"chunk_{uuid.uuid4().hex[:8]}")
+    source_id: str
+    source_title: str
+    section: str
+    text: str
+    embedding: List[float] = Field(default_factory=list)
+
+class CheckRun(BaseModel):
+    """Metadata about a single review run for reproducibility (PRD 9.4)."""
+    id: str = Field(default_factory=lambda: f"run_{uuid.uuid4().hex[:8]}")
+    version_id: str
+    model: str = "gemini-2.0-flash"
+    prompt_hash: str = ""
+    started_at: float = Field(default_factory=time.time)
+    completed_at: Optional[float] = None
+    status: Literal["running", "completed", "failed"] = "running"
+    regex_finding_count: int = 0
+    llm_finding_count: int = 0
+    dropped_finding_count: int = 0
+
 class FindingSource(BaseModel):
     source_id: str
     section: str
@@ -73,6 +95,7 @@ class Finding(BaseModel):
     sources: List[FindingSource]
     suggestion: str
     status: FindingStatus = "open"
+    detection_method: Literal["regex", "llm", "visual"] = "regex"
     creator_response: Optional[str] = None  # Reason for dispute or edited text
     override_reason: Optional[str] = None   # Reason required for reviewer override
 
@@ -94,6 +117,47 @@ class Decision(BaseModel):
     outcome: Literal["approved", "rejected", "changes_requested"]
     reason: str
     timestamp: float = Field(default_factory=time.time)
+
+class FindingDecisionRecord(BaseModel):
+    """Captures the full context of a human decision on a finding (PRD Section 7.6)."""
+    id: str = Field(default_factory=lambda: f"fdr_{uuid.uuid4().hex[:8]}")
+    finding_id: str
+    source_id: str
+    category: FindingCategory
+    original_severity: FindingSeverity
+    content_type: str
+    channel: str
+    action: Literal["accepted", "edited", "disputed", "overridden"]
+    reason: Optional[str] = None
+    timestamp: float = Field(default_factory=time.time)
+
+class SeverityAdjustment(BaseModel):
+    """A learned adjustment to a rule's severity in a specific context."""
+    id: str = Field(default_factory=lambda: f"adj_{uuid.uuid4().hex[:8]}")
+    source_id: str
+    source_section: str
+    content_type: Optional[str] = None
+    channel: Optional[str] = None
+    original_severity: FindingSeverity
+    adjusted_severity: FindingSeverity
+    evidence_count: int
+    override_rate_pct: float
+    top_reasons: List[str] = Field(default_factory=list)
+    status: Literal["proposed", "approved", "rejected"] = "proposed"
+    created_at: float = Field(default_factory=time.time)
+    approved_by: Optional[str] = None
+
+class GuidelineRewriteSuggestion(BaseModel):
+    """AI-generated suggestion to clarify an ambiguous guideline."""
+    id: str = Field(default_factory=lambda: f"grs_{uuid.uuid4().hex[:8]}")
+    source_id: str
+    source_title: str
+    current_content: str
+    suggested_content: str
+    rationale: str
+    evidence_summary: str
+    status: Literal["proposed", "approved", "rejected"] = "proposed"
+    created_at: float = Field(default_factory=time.time)
 
 class AuditEvent(BaseModel):
     id: str = Field(default_factory=lambda: f"aud_{uuid.uuid4().hex[:8]}")

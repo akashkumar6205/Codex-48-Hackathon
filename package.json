@@ -1,0 +1,17 @@
+{
+  "name": "brandlens",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BrandLens AI Brand Governance Platform",
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "backend": "python -m uvicorn backend.main:app --reload --port 8000",
+    "all": "python run.py",
+    "start": "python run.py",
+    "build": "npm --prefix frontend run build",
+    "lint": "npm --prefix frontend run lint",
+    "preview": "npm --prefix frontend run preview",
+    "frontend": "npm --prefix frontend run dev"
+  }
+}
+

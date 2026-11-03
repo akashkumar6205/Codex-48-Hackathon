@@ -809,7 +809,7 @@ function renderFindings() {
   let findings = content.findings || [];
 
   if (state.activeFilter !== "all") {
-    if (["claims", "terminology", "tone", "facts"].includes(state.activeFilter)) {
+    if (["claims", "terminology", "tone", "facts", "visual", "accessibility"].includes(state.activeFilter)) {
       findings = findings.filter((f) => f.category === state.activeFilter);
     } else {
       findings = findings.filter((f) => f.status === state.activeFilter);
@@ -840,6 +840,7 @@ function renderFindings() {
               <span class="category-tag cat-${f.category}">${f.category}</span>
               <span class="meta-sep">·</span>
               <span class="severity-pill sev-${f.severity}">${f.severity}</span>
+              ${f.detection_method === "llm" ? `<span class="meta-sep">·</span><span class="badge-ai-grounded" style="font-size: 10px; background: rgba(41, 112, 255, 0.15); color: #60a5fa; border: 1px solid rgba(41, 112, 255, 0.3); border-radius: 4px; padding: 1px 5px; font-weight: 500;">AI Grounded</span>` : (f.detection_method === "visual" ? `<span class="meta-sep">·</span><span class="badge-visual-eval" style="font-size: 10px; background: rgba(167, 139, 250, 0.15); color: #c4b5fd; border: 1px solid rgba(167, 139, 250, 0.3); border-radius: 4px; padding: 1px 5px; font-weight: 500;">Visual Inspection</span>` : "")}
             </div>
             <span class="status-label ${f.status}">${f.status}</span>
           </div>

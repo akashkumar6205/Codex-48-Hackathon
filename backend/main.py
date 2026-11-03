@@ -24,6 +24,9 @@ from backend.models import (
 )
 from backend.storage import store
 from backend.review_engine import review_engine
+from backend.rag_engine import rag_engine
+from backend.embedding_store import embedding_store
+from backend.feedback_loop import feedback_loop
 
 uploads_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "uploads"))
 os.makedirs(uploads_dir, exist_ok=True)
@@ -33,6 +36,15 @@ app = FastAPI(
     description="AI Brand Governance Platform - REST API",
     version="1.0.0"
 )
+
+@app.on_event("startup")
+def startup_init():
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    if api_key:
+        rag_engine.configure(api_key)
+    for s in store.sources.values():
+        if s.status == "active":
+            embedding_store.ingest_source(s)
 
 app.add_middleware(
     CORSMiddleware,
@@ -60,6 +72,10 @@ def toggle_source_status(source_id: str):
         raise HTTPException(status_code=404, detail="Source not found")
     source = store.sources[source_id]
     source.status = "retired" if source.status == "active" else "active"
+    if source.status == "active":
+        embedding_store.ingest_source(source)
+    else:
+        embedding_store.remove_source(source.id)
     store.log_audit(
         actor_id="usr_brand_mgr",
         action=f"{source.status}_source",
@@ -74,6 +90,7 @@ def delete_source(source_id: str):
     if source_id not in store.sources:
         raise HTTPException(status_code=404, detail="Source not found")
     source = store.sources.pop(source_id)
+    embedding_store.remove_source(source_id)
     store.log_audit(
         actor_id="usr_brand_mgr",
         action="delete_source",
@@ -134,6 +151,7 @@ def create_source(req: SourceCreateRequest):
         tags=req.tags
     )
     store.sources[source.id] = source
+    embedding_store.ingest_source(source)
     store.log_audit(
         actor_id="usr_brand_mgr",
         action="create_source",
@@ -155,6 +173,7 @@ def update_source(source_id: str, req: SourceCreateRequest):
     source.owner = req.owner
     source.tags = req.tags
     source.version = f"v{float(source.version.replace('v', '')) + 0.1:.1f}"
+    embedding_store.ingest_source(source)
 
     store.log_audit(
         actor_id="usr_brand_mgr",
@@ -393,7 +412,13 @@ async def upload_document(
     content.versions.append(version)
     content.current_version_id = version.id
 
-    findings = review_engine.run_check(extracted_text, content_type, channel, is_image=is_image)
+    findings = review_engine.run_check(
+        extracted_text,
+        content_type,
+        channel,
+        is_image=is_image,
+        image_path=saved_path if is_image else None
+    )
     content.findings = findings
     store.content_items[content.id] = content
 
@@ -429,11 +454,13 @@ def get_content(content_id: str):
     # If no findings yet, run check automatically
     if not content.findings and content.versions:
         latest_ver = content.versions[-1]
+        img_path = os.path.join(uploads_dir, os.path.basename(content.image_url)) if content.image_url else None
         content.findings = review_engine.run_check(
             latest_ver.extracted_text,
             content.content_type,
             content.channel,
-            is_image=bool(content.image_url or content.is_image)
+            is_image=bool(content.image_url or content.is_image),
+            image_path=img_path
         )
         
     comments = [c for c in store.comments if c.content_id == content_id]
@@ -451,12 +478,14 @@ def rerun_check(content_id: str):
         raise HTTPException(status_code=404, detail="Content not found")
     content = store.content_items[content_id]
     current_ver = next((v for v in content.versions if v.id == content.current_version_id), content.versions[-1])
+    img_path = os.path.join(uploads_dir, os.path.basename(content.image_url)) if content.image_url else None
     
     findings = review_engine.run_check(
         current_ver.extracted_text,
         content.content_type,
         content.channel,
-        is_image=bool(content.image_url or content.is_image)
+        is_image=bool(content.image_url or content.is_image),
+        image_path=img_path
     )
     content.findings = findings
     content.updated_at = time.time()
@@ -576,6 +605,20 @@ def handle_finding_action(content_id: str, finding_id: str, req: FindingActionRe
             "status": finding.status
         }
     )
+
+    # ── Closed-Loop Decision Recording (Phase 3) ──
+    primary_src_id = finding.sources[0].source_id if finding.sources else "unknown"
+    feedback_loop.record_decision(
+        finding_id=finding.id,
+        source_id=primary_src_id,
+        category=finding.category,
+        original_severity=finding.severity,
+        content_type=content.content_type,
+        channel=content.channel,
+        action=finding.status,
+        reason=req.reason or req.edited_text
+    )
+
     return finding
 
 # -------------------------------------------------------------
@@ -706,8 +749,68 @@ def get_insights():
         "by_category": category_counts,
         "by_severity": severity_counts,
         "top_flagged_rules": top_flagged_rules,
-        "unclear_rules": unclear_rules
+        "unclear_rules": unclear_rules,
+        "pending_adjustments": [a.model_dump() for a in feedback_loop.get_pending_adjustments()],
+        "active_adjustments": [a.model_dump() for a in feedback_loop.get_active_adjustments()],
+        "rewrite_suggestions": [s.model_dump() for s in feedback_loop.rewrite_suggestions],
+        "decision_records_count": len(feedback_loop.decision_records)
     }
+
+# -------------------------------------------------------------
+# Closed-Loop Learning & Severity Adjustments (PRD Section 7.6)
+# -------------------------------------------------------------
+@app.get("/api/insights/adjustments")
+def get_severity_adjustments():
+    return {
+        "pending": [a.model_dump() for a in feedback_loop.get_pending_adjustments()],
+        "approved": [a.model_dump() for a in feedback_loop.get_active_adjustments()]
+    }
+
+@app.patch("/api/insights/adjustments/{adj_id}")
+def update_severity_adjustment(adj_id: str, action: str = Query("approved"), approver_id: str = Query("usr_brand_mgr")):
+    if action == "approved":
+        adj = feedback_loop.approve_adjustment(adj_id, approver_id)
+    else:
+        adj = feedback_loop.reject_adjustment(adj_id)
+    if not adj:
+        raise HTTPException(status_code=404, detail="Adjustment not found")
+    store.log_audit(
+        actor_id=approver_id,
+        action=f"{action}_severity_adjustment",
+        entity="adjustment",
+        entity_id=adj.id,
+        metadata={
+            "source_id": adj.source_id,
+            "original_severity": adj.original_severity,
+            "adjusted_severity": adj.adjusted_severity,
+            "status": adj.status
+        }
+    )
+    return adj
+
+@app.get("/api/insights/rewrite-suggestions")
+def get_rewrite_suggestions():
+    return [s.model_dump() for s in feedback_loop.rewrite_suggestions]
+
+@app.post("/api/insights/rewrite-suggestions/{source_id}")
+def generate_rewrite_suggestion_endpoint(source_id: str):
+    source = store.sources.get(source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+    adj = next((a for a in feedback_loop.adjustments if a.source_id == source_id), None)
+    if not adj:
+        adj = SeverityAdjustment(
+            source_id=source_id,
+            source_section=source.section,
+            content_type="general",
+            channel="all",
+            original_severity="high",
+            adjusted_severity="medium",
+            evidence_count=1,
+            override_rate_pct=50.0,
+            top_reasons=["Contextual exceptions required for domain-specific terminology."]
+        )
+    return feedback_loop.generate_rewrite_suggestion(source, adj)
 
 # -------------------------------------------------------------
 # Audit Log (PRD Section 7.5 WF-5, Section 12)

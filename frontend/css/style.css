@@ -753,6 +753,8 @@ button, input, select, textarea {
 .cat-claims { color: #f472b6; }
 .cat-terminology { color: #38bdf8; }
 .cat-tone { color: #fbbf24; }
+.cat-visual { color: #a78bfa; }
+.cat-accessibility { color: #34d399; }
 
 .severity-pill {
   font-size: 10.5px;

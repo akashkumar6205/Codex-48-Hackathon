@@ -138,6 +138,11 @@ class DataStore:
         for s in seed_sources:
             self.sources[s.id] = s
 
+        # Ingest into vector embedding store for RAG
+        from backend.embedding_store import embedding_store
+        for s in self.sources.values():
+            embedding_store.ingest_source(s)
+
         # Content items (managed dynamically by real users)
         self.content_items: Dict[str, ContentItem] = {}
         

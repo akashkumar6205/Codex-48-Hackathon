@@ -40,6 +40,14 @@ export const api = {
     return await res.json();
   },
 
+  async getFirebaseConfig() {
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/firebase-config`);
+      if (res.ok) return await res.json();
+    } catch (_) {}
+    return null;
+  },
+
   // Knowledge Base Sources
   async listSources() {
     const res = await fetch(`${API_BASE}/api/sources`);
@@ -200,3 +208,7 @@ export const api = {
     return await res.json();
   },
 };
+
+if (typeof window !== "undefined") {
+  window.api = api;
+}

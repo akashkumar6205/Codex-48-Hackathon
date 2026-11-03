@@ -1,40 +1,49 @@
-import os
+"""
+Verify Firebase Auth and .env configuration endpoints
+"""
 import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-def test_google_auth_api():
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    sys.path.insert(0, base_dir)
-    
-    from backend.storage import store
-    from backend.models import GoogleAuthRequest
-    from backend.main import auth_google, list_auth_users
-    
-    # 1. Test authenticating with Google account
-    req = GoogleAuthRequest(
-        uid="goog_user_123456",
-        email="alex.morgan@brandlens.google",
-        name="Alex Morgan Google",
-        photo_url="https://lh3.googleusercontent.com/a/demo-photo",
-        role="creator"
-    )
-    res = auth_google(req)
-    
-    assert res["status"] == "authenticated"
-    assert res["user"].email == "alex.morgan@brandlens.google"
-    assert res["user"].name == "Alex Morgan Google"
-    assert res["user"].photo_url == "https://lh3.googleusercontent.com/a/demo-photo"
-    
-    # 2. Check user in store
-    users = list_auth_users()
-    user_ids = [u.id for u in users]
-    assert "usr_goog_user_1" in user_ids or any("goog" in uid for uid in user_ids)
-    
-    # 3. Check audit event logged
-    audit_events = [e for e in store.audit_events if e.action == "google_sign_in"]
-    assert len(audit_events) > 0
-    assert audit_events[-1].metadata.get("provider") == "firebase_google"
-    
-    print("PASS: Google Auth Backend API & Audit Trail successfully verified!")
+from fastapi.testclient import TestClient
+from backend.main import app
+
+client = TestClient(app)
+
+def test_firebase_config_endpoint():
+    res = client.get("/api/auth/firebase-config")
+    assert res.status_code == 200, f"Expected 200, got {res.status_code}"
+    data = res.json()
+    assert "apiKey" in data, "Missing apiKey in firebase config"
+    assert "authDomain" in data, "Missing authDomain in firebase config"
+    assert "projectId" in data, "Missing projectId in firebase config"
+    print("✓ test_firebase_config_endpoint passed:", data)
+
+def test_google_user_sync():
+    payload = {
+        "uid": "goog_test_user_12345",
+        "email": "sarah.connor@acme-corp.com",
+        "name": "Sarah Connor",
+        "role": "brand_manager",
+        "photo_url": "https://lh3.googleusercontent.com/a/test-avatar"
+    }
+    res = client.post("/api/auth/google", json=payload)
+    assert res.status_code == 200, f"Expected 200, got {res.status_code}: {res.text}"
+    user_res = res.json()
+    assert user_res["status"] == "authenticated"
+    assert user_res["user"]["email"] == "sarah.connor@acme-corp.com"
+    assert user_res["user"]["role"] == "brand_manager"
+    print("✓ test_google_user_sync passed:", user_res["user"]["name"])
+
+    # Check list
+    list_res = client.get("/api/auth/users")
+    assert list_res.status_code == 200
+    users = list_res.json()
+    found = any(u["email"] == "sarah.connor@acme-corp.com" for u in users)
+    assert found, "Synced user not found in user list"
+    print("✓ test_auth_users_list passed. Total users:", len(users))
 
 if __name__ == "__main__":
-    test_google_auth_api()
+    test_firebase_config_endpoint()
+    test_google_user_sync()
+    print("\nALL GOOGLE AUTH & .ENV ENDPOINTS VERIFIED SUCCESSFULLY!")

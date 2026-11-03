@@ -57,9 +57,23 @@ export async function initFirebaseAuth(onUserChange) {
     authListenerCallback(currentUser);
   }
 
-  const config = getFirebaseConfig();
-  // Only attempt Firebase Modular SDK initialization if a real API key is configured
-  if (config && config.apiKey && !config.apiKey.includes("Demo") && !config.apiKey.includes("Placeholder")) {
+  // Check backend .env credentials if local storage is missing apiKey
+  let config = getFirebaseConfig();
+  if (!config || !config.apiKey) {
+    try {
+      const res = await fetch("/api/auth/firebase-config");
+      if (res.ok) {
+        const envConfig = await res.json();
+        if (envConfig && envConfig.apiKey && envConfig.apiKey.startsWith("AIzaSy")) {
+          config = envConfig;
+          saveFirebaseConfig(envConfig);
+        }
+      }
+    } catch (_) {}
+  }
+
+  // Only attempt Firebase Modular SDK initialization if a genuine non-placeholder API key is configured
+  if (config && config.apiKey && config.apiKey.startsWith("AIzaSy") && config.apiKey.length > 20) {
     try {
       const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js");
       const { getAuth, onAuthStateChanged } = await import("https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js");
@@ -98,8 +112,8 @@ export async function initFirebaseAuth(onUserChange) {
 export async function signInWithGoogle() {
   const config = getFirebaseConfig();
 
-  // If valid Firebase Project config is present, try popup
-  if (firebaseAuth && config && config.apiKey && !config.apiKey.includes("Demo")) {
+  // If valid Firebase Project config is present and SDK is initialized, try popup
+  if (firebaseAuth && config && config.apiKey && config.apiKey.startsWith("AIzaSy")) {
     try {
       const { GoogleAuthProvider, signInWithPopup } = await import("https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js");
       const provider = new GoogleAuthProvider();
@@ -184,11 +198,20 @@ function formatNameFromEmail(email) {
 }
 
 // Show Firebase Auth Modal
-export function showFirebaseConfigModal(notice = "") {
+export async function showFirebaseConfigModal(notice = "") {
   const modal = document.getElementById("firebaseConfigModal");
   if (!modal) return;
 
-  const config = getFirebaseConfig();
+  let config = getFirebaseConfig();
+  if (!config) {
+    try {
+      const res = await fetch("/api/auth/firebase-config");
+      if (res.ok) {
+        config = await res.json();
+      }
+    } catch (_) {}
+  }
+
   const apiKeyInput = document.getElementById("fbApiKeyInput");
   const authDomainInput = document.getElementById("fbAuthDomainInput");
   const projectIdInput = document.getElementById("fbProjectIdInput");
@@ -197,10 +220,10 @@ export function showFirebaseConfigModal(notice = "") {
   const detailsEl = document.getElementById("fbProjectKeysDetails");
 
   if (config) {
-    if (apiKeyInput) apiKeyInput.value = config.apiKey || "";
-    if (authDomainInput) authDomainInput.value = config.authDomain || "";
-    if (projectIdInput) projectIdInput.value = config.projectId || "";
-    if (appIdInput) appIdInput.value = config.appId || "";
+    if (apiKeyInput && !apiKeyInput.value) apiKeyInput.value = config.apiKey || "";
+    if (authDomainInput && !authDomainInput.value) authDomainInput.value = config.authDomain || "";
+    if (projectIdInput && !projectIdInput.value) projectIdInput.value = config.projectId || "";
+    if (appIdInput && !appIdInput.value) appIdInput.value = config.appId || "";
   }
 
   if (notice && detailsEl) {
@@ -208,7 +231,10 @@ export function showFirebaseConfigModal(notice = "") {
   }
 
   modal.classList.add("active");
-  if (emailInput) emailInput.focus();
+  if (emailInput) {
+    emailInput.value = "";
+    emailInput.focus();
+  }
 }
 
 export function closeFirebaseConfigModal() {

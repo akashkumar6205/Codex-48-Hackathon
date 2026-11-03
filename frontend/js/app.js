@@ -4,7 +4,7 @@
  * Zero TypeScript, Zero Next.js
  */
 
-import { api } from "./api.js";
+import { api } from "./api.js?v=20261103_3";
 import {
   initFirebaseAuth,
   signInWithGoogle,
@@ -14,7 +14,7 @@ import {
   saveFirebaseConfig,
   loginWithGoogleEmail,
   getFirebaseConfig
-} from "./firebase-auth.js";
+} from "./firebase-auth.js?v=20261103_3";
 
 // Application State
 const state = {
@@ -214,14 +214,21 @@ function handleAuthChange(user) {
       elements.fbStatusBadge.className = "status-badge status-approved";
     }
 
-    // Sync user with backend session & audit log
-    api.syncGoogleUser({
-      uid: user.uid,
-      email: user.email,
-      name: user.name,
-      photo_url: user.photoUrl,
-      role: state.currentRole,
-    }).catch((err) => console.warn("Google auth sync notice:", err));
+    // Sync user with backend session & audit log safely
+    const syncFn = (api && typeof api.syncGoogleUser === "function")
+      ? api.syncGoogleUser
+      : (typeof window !== "undefined" && window.api && typeof window.api.syncGoogleUser === "function")
+        ? window.api.syncGoogleUser
+        : null;
+    if (syncFn) {
+      syncFn({
+        uid: user.uid,
+        email: user.email,
+        name: user.name,
+        photo_url: user.photoUrl,
+        role: state.currentRole,
+      }).catch((err) => console.warn("Google auth sync notice:", err));
+    }
 
   } else {
     if (elements.btnGoogleSignIn) elements.btnGoogleSignIn.style.display = "inline-flex";
@@ -267,6 +274,15 @@ function setupEventListeners() {
 
   // Firebase Google Sign In button in header
   elements.btnGoogleSignIn?.addEventListener("click", async () => {
+    const config = getFirebaseConfig();
+    if (config && config.apiKey && config.apiKey.startsWith("AIzaSy") && config.apiKey.length > 20) {
+      try {
+        const u = await signInWithGoogle();
+        if (u) return;
+      } catch (e) {
+        console.warn("Popup attempt error:", e);
+      }
+    }
     showFirebaseConfigModal();
   });
 

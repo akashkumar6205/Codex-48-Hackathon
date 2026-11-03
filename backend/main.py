@@ -12,6 +12,25 @@ from typing import List, Optional
 # Ensure project root is in sys.path whether executed from root or backend/
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+def _load_env_file():
+    for base in [Path(__file__).resolve().parent.parent, Path(__file__).resolve().parent]:
+        env_file = base / ".env"
+        if env_file.exists():
+            try:
+                with open(env_file, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            k = k.strip()
+                            v = v.strip().strip('"').strip("'")
+                            if k and k not in os.environ:
+                                os.environ[k] = v
+            except Exception:
+                pass
+
+_load_env_file()
+
 from fastapi import FastAPI, HTTPException, Query, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -98,6 +117,18 @@ def auth_google(req: GoogleAuthRequest):
 @app.get("/api/auth/users")
 def list_auth_users():
     return list(store.users.values())
+
+@app.get("/api/auth/firebase-config")
+def get_firebase_config():
+    """Returns Firebase project credentials loaded from .env for web client initialization."""
+    return {
+        "apiKey": os.environ.get("FIREBASE_API_KEY", ""),
+        "authDomain": os.environ.get("FIREBASE_AUTH_DOMAIN", "brandlens-governance.firebaseapp.com"),
+        "projectId": os.environ.get("FIREBASE_PROJECT_ID", "brandlens-governance"),
+        "storageBucket": os.environ.get("FIREBASE_STORAGE_BUCKET", "brandlens-governance.appspot.com"),
+        "messagingSenderId": os.environ.get("FIREBASE_MESSAGING_SENDER_ID", ""),
+        "appId": os.environ.get("FIREBASE_APP_ID", "")
+    }
 
 @app.patch("/api/sources/{source_id}/toggle-status")
 def toggle_source_status(source_id: str):

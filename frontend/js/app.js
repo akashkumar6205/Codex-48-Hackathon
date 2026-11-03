@@ -12,14 +12,14 @@ import {
   showFirebaseConfigModal,
   closeFirebaseConfigModal,
   saveFirebaseConfig,
-  authenticateWithGoogleProfile,
+  loginWithGoogleEmail,
   getFirebaseConfig
 } from "./firebase-auth.js";
 
 // Application State
 const state = {
   currentRole: "creator", // 'creator', 'reviewer', 'brand_manager', 'admin'
-  currentUser: { id: "usr_creator", name: "Alex Morgan", role: "creator" },
+  currentUser: { id: "usr_creator", name: "Creator", email: "creator@company.com", role: "creator" },
   activeTab: "studio",
   contentList: [],
   activeContentId: null,
@@ -36,13 +36,20 @@ const state = {
   diffCompareV2: null,
 };
 
-// Role user mapping
-const ROLE_USERS = {
-  creator: { id: "usr_creator", name: "Alex Morgan", role: "creator" },
-  reviewer: { id: "usr_reviewer", name: "Jordan Hayes", role: "reviewer" },
-  brand_manager: { id: "usr_brand_mgr", name: "Elena Vance", role: "brand_manager" },
-  admin: { id: "usr_admin", name: "Marcus Sterling", role: "admin" },
-};
+function getDefaultRoleUser(role) {
+  const roleLabels = {
+    creator: "Creator",
+    reviewer: "Reviewer",
+    brand_manager: "Brand Manager",
+    admin: "Admin",
+  };
+  return {
+    id: `usr_${role}`,
+    name: roleLabels[role] || "User",
+    email: `${role}@company.com`,
+    role: role,
+  };
+}
 
 // DOM Elements
 const elements = {
@@ -148,8 +155,11 @@ const elements = {
   btnSettingsGoogleAuth: document.getElementById("btnSettingsGoogleAuth"),
   txtAuthAccountInfo: document.getElementById("txtAuthAccountInfo"),
   fbStatusBadge: document.getElementById("fbStatusBadge"),
-  btnQuickAlex: document.getElementById("btnQuickAlex"),
-  btnQuickElena: document.getElementById("btnQuickElena"),
+  googleEmailLoginForm: document.getElementById("googleEmailLoginForm"),
+  loginGoogleEmail: document.getElementById("loginGoogleEmail"),
+  loginUserRole: document.getElementById("loginUserRole"),
+  btnSubmitGoogleEmail: document.getElementById("btnSubmitGoogleEmail"),
+  btnLaunchFirebasePopup: document.getElementById("btnLaunchFirebasePopup"),
   btnSaveFirebaseConfig: document.getElementById("btnSaveFirebaseConfig"),
   btnCloseFirebaseModal: document.getElementById("btnCloseFirebaseModal"),
   fbApiKeyInput: document.getElementById("fbApiKeyInput"),
@@ -173,29 +183,32 @@ function handleAuthChange(user) {
   if (user) {
     if (elements.btnGoogleSignIn) elements.btnGoogleSignIn.style.display = "none";
     if (elements.userProfilePill) elements.userProfilePill.style.display = "inline-flex";
-    if (elements.userDisplayName) elements.userDisplayName.textContent = user.name;
+    if (elements.userDisplayName) elements.userDisplayName.textContent = user.name || user.email;
 
     if (user.photoUrl && elements.userAvatarImg) {
       elements.userAvatarImg.src = user.photoUrl;
       elements.userAvatarImg.style.display = "block";
       if (elements.userAvatarFallback) elements.userAvatarFallback.style.display = "none";
     } else if (elements.userAvatarFallback) {
-      const initials = (user.name || "U").split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
+      const initials = (user.name || user.email || "G").split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
       elements.userAvatarFallback.textContent = initials || "G";
       elements.userAvatarFallback.style.display = "inline";
       if (elements.userAvatarImg) elements.userAvatarImg.style.display = "none";
     }
 
+    state.currentRole = user.role || state.currentRole;
+    if (elements.roleSelect) elements.roleSelect.value = state.currentRole;
+
     state.currentUser = {
       id: user.uid,
-      name: user.name,
+      name: user.name || user.email.split("@")[0],
       email: user.email,
       role: state.currentRole,
       photoUrl: user.photoUrl || null,
     };
 
-    if (elements.currentUserName) elements.currentUserName.textContent = user.name;
-    if (elements.txtAuthAccountInfo) elements.txtAuthAccountInfo.textContent = `Signed in as ${user.name} (${user.email})`;
+    if (elements.currentUserName) elements.currentUserName.textContent = `${user.name} (${user.email})`;
+    if (elements.txtAuthAccountInfo) elements.txtAuthAccountInfo.textContent = `Signed in as ${user.name} (${user.email}) [Role: ${state.currentRole.toUpperCase()}]`;
     if (elements.fbStatusBadge) {
       elements.fbStatusBadge.textContent = "Active (Google Auth)";
       elements.fbStatusBadge.className = "status-badge status-approved";
@@ -214,34 +227,47 @@ function handleAuthChange(user) {
     if (elements.btnGoogleSignIn) elements.btnGoogleSignIn.style.display = "inline-flex";
     if (elements.userProfilePill) elements.userProfilePill.style.display = "none";
 
-    state.currentUser = ROLE_USERS[state.currentRole];
-    if (elements.currentUserName) elements.currentUserName.textContent = state.currentUser.name;
+    state.currentUser = getDefaultRoleUser(state.currentRole);
+    if (elements.currentUserName) elements.currentUserName.textContent = "Not signed in";
     if (elements.txtAuthAccountInfo) elements.txtAuthAccountInfo.textContent = "Not signed in";
     if (elements.fbStatusBadge) {
-      elements.fbStatusBadge.textContent = "Configured";
-      elements.fbStatusBadge.className = "status-badge status-in_review";
+      elements.fbStatusBadge.textContent = "Ready";
+      elements.fbStatusBadge.className = "status-badge status-draft";
     }
   }
 }
 
 function setupEventListeners() {
-  // Firebase Google Authentication Handlers
-  elements.btnGoogleSignIn?.addEventListener("click", async () => {
-    try {
-      if (elements.btnGoogleSignIn) {
-        elements.btnGoogleSignIn.disabled = true;
-        elements.btnGoogleSignIn.style.opacity = "0.7";
-      }
-      await signInWithGoogle();
-    } catch (err) {
-      console.warn("Google sign-in check:", err);
-      showFirebaseConfigModal(err.message || "Sign in cancelled or configuration required.");
-    } finally {
-      if (elements.btnGoogleSignIn) {
-        elements.btnGoogleSignIn.disabled = false;
-        elements.btnGoogleSignIn.style.opacity = "1";
-      }
+  // Google Email Login form submit
+  elements.googleEmailLoginForm?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const email = elements.loginGoogleEmail?.value.trim();
+    const role = elements.loginUserRole?.value || "creator";
+    if (!email) {
+      alert("Please enter a valid Google email address.");
+      return;
     }
+    try {
+      loginWithGoogleEmail(email, role);
+      closeFirebaseConfigModal();
+    } catch (err) {
+      alert(err.message || "Failed to sign in with Google email.");
+    }
+  });
+
+  // Native Firebase OAuth Popup test
+  elements.btnLaunchFirebasePopup?.addEventListener("click", async () => {
+    try {
+      await signInWithGoogle();
+      closeFirebaseConfigModal();
+    } catch (err) {
+      alert("Firebase OAuth Notice: " + (err.message || err));
+    }
+  });
+
+  // Firebase Google Sign In button in header
+  elements.btnGoogleSignIn?.addEventListener("click", async () => {
+    showFirebaseConfigModal();
   });
 
   elements.btnSignOut?.addEventListener("click", async () => {
@@ -253,26 +279,6 @@ function setupEventListeners() {
   });
 
   elements.btnCloseFirebaseModal?.addEventListener("click", () => {
-    closeFirebaseConfigModal();
-  });
-
-  elements.btnQuickAlex?.addEventListener("click", () => {
-    authenticateWithGoogleProfile({
-      uid: "usr_alex_google",
-      name: "Alex Morgan",
-      email: "alex.morgan@brandlens.google",
-      photoUrl: null,
-    });
-    closeFirebaseConfigModal();
-  });
-
-  elements.btnQuickElena?.addEventListener("click", () => {
-    authenticateWithGoogleProfile({
-      uid: "usr_elena_google",
-      name: "Elena Vance",
-      email: "elena.vance@brandlens.google",
-      photoUrl: null,
-    });
     closeFirebaseConfigModal();
   });
 
@@ -290,7 +296,11 @@ function setupEventListeners() {
   // Role selector
   elements.roleSelect.addEventListener("change", (e) => {
     state.currentRole = e.target.value;
-    state.currentUser = ROLE_USERS[state.currentRole];
+    if (state.currentUser && state.currentUser.email && state.currentUser.email !== "creator@company.com") {
+      state.currentUser.role = state.currentRole;
+    } else {
+      state.currentUser = getDefaultRoleUser(state.currentRole);
+    }
     elements.currentUserName.textContent = state.currentUser.name;
     updateRoleSpecificUI();
     renderFindings();

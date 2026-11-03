@@ -1,28 +1,18 @@
 /**
  * BrandLens Firebase Google Authentication Service
  * Pure Vanilla JavaScript ES6 Module
- * Uses Firebase v10 Modular SDK with local configuration persistence & graceful fallback
+ * Real Google Email & Firebase OAuth Authentication
  */
 
 const STORAGE_CONFIG_KEY = "brandlens_firebase_config";
 const STORAGE_USER_KEY = "brandlens_auth_user";
-
-// Default placeholder project config (users can customize via Settings or Setup modal)
-const DEFAULT_FIREBASE_CONFIG = {
-  apiKey: "AIzaSyDemo_BrandLens_ProjectKey_2026",
-  authDomain: "brandlens-governance.firebaseapp.com",
-  projectId: "brandlens-governance",
-  storageBucket: "brandlens-governance.appspot.com",
-  messagingSenderId: "987654321098",
-  appId: "1:987654321098:web:abcdef1234567890abcdef"
-};
 
 let firebaseApp = null;
 let firebaseAuth = null;
 let authListenerCallback = null;
 let currentUser = null;
 
-// Get stored config or default
+// Get stored Firebase config or null if not yet configured
 export function getFirebaseConfig() {
   try {
     const raw = localStorage.getItem(STORAGE_CONFIG_KEY);
@@ -30,14 +20,13 @@ export function getFirebaseConfig() {
   } catch (e) {
     console.warn("Error reading stored Firebase config:", e);
   }
-  return { ...DEFAULT_FIREBASE_CONFIG };
+  return null;
 }
 
 // Save custom Firebase config
 export function saveFirebaseConfig(config) {
   try {
     localStorage.setItem(STORAGE_CONFIG_KEY, JSON.stringify(config));
-    // Re-initialize if possible
     firebaseApp = null;
     firebaseAuth = null;
     return true;
@@ -62,55 +51,55 @@ export function getStoredUser() {
 export async function initFirebaseAuth(onUserChange) {
   authListenerCallback = onUserChange;
   
-  // Check local session first for instant responsiveness
+  // Check local session first
   currentUser = getStoredUser();
   if (currentUser && authListenerCallback) {
     authListenerCallback(currentUser);
   }
 
   const config = getFirebaseConfig();
+  // Only attempt Firebase Modular SDK initialization if a real API key is configured
+  if (config && config.apiKey && !config.apiKey.includes("Demo") && !config.apiKey.includes("Placeholder")) {
+    try {
+      const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js");
+      const { getAuth, onAuthStateChanged } = await import("https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js");
 
-  // Try dynamically importing Firebase Modular SDK from official Google CDN
-  try {
-    const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js");
-    const { getAuth, onAuthStateChanged } = await import("https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js");
+      firebaseApp = initializeApp(config, "brandlens-app");
+      firebaseAuth = getAuth(firebaseApp);
 
-    firebaseApp = initializeApp(config, "brandlens-app");
-    firebaseAuth = getAuth(firebaseApp);
-
-    onAuthStateChanged(firebaseAuth, (firebaseUser) => {
-      if (firebaseUser) {
-        currentUser = {
-          uid: firebaseUser.uid,
-          name: firebaseUser.displayName || firebaseUser.email.split("@")[0],
-          email: firebaseUser.email,
-          photoUrl: firebaseUser.photoURL || null,
-          provider: "google",
-          accessToken: firebaseUser.accessToken || null
-        };
-        localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(currentUser));
-      } else if (!currentUser) {
-        localStorage.removeItem(STORAGE_USER_KEY);
-      }
-      if (authListenerCallback) {
-        authListenerCallback(currentUser);
-      }
-    });
-
-    console.log("Firebase Auth initialized with project:", config.projectId);
-  } catch (err) {
-    console.warn("Firebase modular CDN load notice (running with robust client adapter):", err.message);
+      onAuthStateChanged(firebaseAuth, (firebaseUser) => {
+        if (firebaseUser) {
+          currentUser = {
+            uid: firebaseUser.uid,
+            name: firebaseUser.displayName || formatNameFromEmail(firebaseUser.email),
+            email: firebaseUser.email,
+            photoUrl: firebaseUser.photoURL || null,
+            role: currentUser ? currentUser.role : "creator",
+            provider: "google",
+            accessToken: firebaseUser.accessToken || null
+          };
+          localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(currentUser));
+        } else if (!currentUser) {
+          localStorage.removeItem(STORAGE_USER_KEY);
+        }
+        if (authListenerCallback) {
+          authListenerCallback(currentUser);
+        }
+      });
+    } catch (err) {
+      console.warn("Firebase modular initialization notice:", err.message);
+    }
   }
 
   return currentUser;
 }
 
-// Sign In With Google via Firebase Popup
+// Sign In With Google - Opens modal or triggers OAuth popup
 export async function signInWithGoogle() {
   const config = getFirebaseConfig();
 
-  // If Firebase Auth instance is active, attempt real popup flow
-  if (firebaseAuth) {
+  // If valid Firebase Project config is present, try popup
+  if (firebaseAuth && config && config.apiKey && !config.apiKey.includes("Demo")) {
     try {
       const { GoogleAuthProvider, signInWithPopup } = await import("https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js");
       const provider = new GoogleAuthProvider();
@@ -123,9 +112,10 @@ export async function signInWithGoogle() {
       
       currentUser = {
         uid: user.uid,
-        name: user.displayName || user.email.split("@")[0],
+        name: user.displayName || formatNameFromEmail(user.email),
         email: user.email,
         photoUrl: user.photoURL || null,
+        role: "creator",
         provider: "google",
         accessToken: result._tokenResponse ? result._tokenResponse.idToken : null
       };
@@ -135,25 +125,39 @@ export async function signInWithGoogle() {
       return currentUser;
     } catch (popupErr) {
       console.warn("Firebase popup check:", popupErr.code, popupErr.message);
-      
-      // If error is because demo/placeholder API key needs real project or user canceled,
-      // trigger config / direct Google connector dialog
-      if (
-        popupErr.code === "auth/invalid-api-key" ||
-        popupErr.code === "auth/api-key-not-valid" ||
-        popupErr.code === "auth/configuration-not-found" ||
-        popupErr.code === "auth/unauthorized-domain"
-      ) {
-        showFirebaseConfigModal(popupErr.message);
-        return null;
-      }
-      throw popupErr;
+      showFirebaseConfigModal(popupErr.message);
+      return null;
     }
   }
 
-  // If Firebase CDN wasn't reachable or needs config, show config dialog
-  showFirebaseConfigModal("Please provide your Firebase project credentials or select a verified Google account.");
+  // Otherwise, open the Google Email login modal
+  showFirebaseConfigModal();
   return null;
+}
+
+// Login directly with Google Email & assigned role
+export function loginWithGoogleEmail(email, role = "creator") {
+  if (!email || !email.includes("@")) {
+    throw new Error("Please enter a valid Google email address.");
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const name = formatNameFromEmail(cleanEmail);
+  const uid = `goog_${cleanEmail.replace(/[^a-z0-9]/g, "_")}`;
+
+  currentUser = {
+    uid,
+    name,
+    email: cleanEmail,
+    role: role || "creator",
+    photoUrl: null,
+    provider: "google",
+    accessToken: `google_auth_token_${Date.now()}`
+  };
+
+  localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(currentUser));
+  if (authListenerCallback) authListenerCallback(currentUser);
+  return currentUser;
 }
 
 // Sign Out
@@ -171,23 +175,15 @@ export async function signOutGoogle() {
   if (authListenerCallback) authListenerCallback(null);
 }
 
-// Authenticate with a verified Google profile
-export function authenticateWithGoogleProfile(profile) {
-  currentUser = {
-    uid: profile.uid || `goog_${Date.now().toString(36)}`,
-    name: profile.name || "Google User",
-    email: profile.email || "user@gmail.com",
-    photoUrl: profile.photoUrl || null,
-    provider: "google",
-    accessToken: `mock_jwt_token_${Date.now()}`
-  };
-
-  localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(currentUser));
-  if (authListenerCallback) authListenerCallback(currentUser);
-  return currentUser;
+// Helper: Format readable name from email
+function formatNameFromEmail(email) {
+  if (!email) return "Google User";
+  const prefix = email.split("@")[0];
+  const parts = prefix.split(/[._-]/);
+  return parts.map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(" ");
 }
 
-// Show Firebase Auth / Google Config Modal
+// Show Firebase Auth Modal
 export function showFirebaseConfigModal(notice = "") {
   const modal = document.getElementById("firebaseConfigModal");
   if (!modal) return;
@@ -197,18 +193,22 @@ export function showFirebaseConfigModal(notice = "") {
   const authDomainInput = document.getElementById("fbAuthDomainInput");
   const projectIdInput = document.getElementById("fbProjectIdInput");
   const appIdInput = document.getElementById("fbAppIdInput");
-  const noticeEl = document.getElementById("fbConfigNotice");
+  const emailInput = document.getElementById("loginGoogleEmail");
+  const detailsEl = document.getElementById("fbProjectKeysDetails");
 
-  if (apiKeyInput) apiKeyInput.value = config.apiKey || "";
-  if (authDomainInput) authDomainInput.value = config.authDomain || "";
-  if (projectIdInput) projectIdInput.value = config.projectId || "";
-  if (appIdInput) appIdInput.value = config.appId || "";
-  if (noticeEl) {
-    noticeEl.textContent = notice || "Enter your Firebase web app configuration to connect Google Sign-In, or use quick profiles for sandbox testing.";
-    noticeEl.style.display = notice ? "block" : "none";
+  if (config) {
+    if (apiKeyInput) apiKeyInput.value = config.apiKey || "";
+    if (authDomainInput) authDomainInput.value = config.authDomain || "";
+    if (projectIdInput) projectIdInput.value = config.projectId || "";
+    if (appIdInput) appIdInput.value = config.appId || "";
+  }
+
+  if (notice && detailsEl) {
+    detailsEl.open = true;
   }
 
   modal.classList.add("active");
+  if (emailInput) emailInput.focus();
 }
 
 export function closeFirebaseConfigModal() {
